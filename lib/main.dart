@@ -1680,48 +1680,10 @@ return 'Ergebnis gesendet';      })();
   }
 
   Future<void> oeffneVideoDirekt(String videoName) async {
-    final link = videoDirektlinks[videoName];
+  debugPrint('PREDIGTFINDER: Video im Browser öffnen: $videoName');
 
-    if (link == null || link.isEmpty) {
-      if (!mounted) return;
-
-      setState(() {
-        status = 'Kein Direktlink hinterlegt: $videoName';
-      });
-
-      debugPrint('PREDIGTFINDER DIREKTLINK FEHLT: $videoName');
-      return;
-    }
-
-    try {
-      if (!mounted) return;
-
-      setState(() {
-        videoWirdGeladen = true;
-        aktuellerVideoDateiname = videoName;
-        aktuellerVideoTitel = videoName.replaceFirst(
-          RegExp(r'\.mp4$', caseSensitive: false),
-          '',
-        );
-        videoAnsichtAnzeigen = true;
-        predigtVorschauAnzeigen = false;
-        status = 'Öffne Video direkt ...';
-      });
-
-      await videoController.loadRequest(Uri.parse(link));
-
-      debugPrint('PREDIGTFINDER VIDEO DIREKT GELADEN: $videoName');
-    } catch (e) {
-      debugPrint('PREDIGTFINDER DIREKTLINKFEHLER: $e');
-
-      if (mounted) {
-        setState(() {
-          videoAnsichtAnzeigen = false;
-          status = 'Video konnte nicht geöffnet werden';
-        });
-      }
-    }
-  }
+  await videoImBrowserOeffnen(videoName);
+}
 
   Future<void> ladeOneDriveVideoOrdner() async {
     try {
