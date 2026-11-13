@@ -901,7 +901,7 @@ await ladeSyncBericht();
     }
 
     automatischeSynchronisierungAktiv = true;
-
+String syncSchritt = 'Initialisierung';
     try {
       debugPrint('PREDIGTFINDER AUTOSYNC: Gestartet');
 
@@ -918,11 +918,12 @@ await ladeSyncBericht();
 
       if (!mounted) return;
 
+syncSchritt = 'OneDrive-Seite laden';
       // Zentral konfigurierten Textordner laden.
       await controller.loadRequest(
         Uri.parse(aktiveOneDriveUrl),
       );
-
+syncSchritt = 'Auf OneDrive-Dateiliste warten';
       // Auf die dynamische OneDrive-Dateiliste warten.
       final bereit = await warteAufPredigtDateiliste();
 
@@ -961,6 +962,7 @@ await ladeSyncBericht();
         'PREDIGTFINDER AUTOSYNC: OneDrive bereit für Dateierfassung',
       );
 
+syncSchritt = 'OneDrive-Dateiliste erfassen';
       final dateien = await erfasseDateilisteMitTimeout();
 
       if (!mounted) return;
@@ -986,6 +988,7 @@ await ladeSyncBericht();
           'Starte Erfassung von ${neueDateien.length} fehlenden Predigten',
         );
 
+syncSchritt = 'Predigttexte erfassen';
         await erfassePredigten(predigtDateien.length);
 
         debugPrint(
@@ -1023,7 +1026,8 @@ await ladeSyncBericht();
   letzteAnzahlGefunden = predigtDateien.length;
   letzteAnzahlErfolgreich = predigtTexte.length;
 
-  synchronisierungsFehler['Synchronisierung'] = e.toString();
+ synchronisierungsFehler['Synchronisierung'] =
+    'Schritt: $syncSchritt | Fehler: $e';
 
   await speichereSyncBericht();
 
