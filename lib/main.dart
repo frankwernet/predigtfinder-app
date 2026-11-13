@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -339,11 +339,18 @@ static const String adminPinSchluessel =
         break;
 
       case 'sync':
-        if (!automatischeSynchronisierungAktiv &&
-            !hintergrundErfassungAktiv &&
-            !dateilisteWirdErfasst) {
-          await starteAutomatischeSynchronisierung();
-        } else {
+  if (!automatischeSynchronisierungAktiv &&
+      !hintergrundErfassungAktiv &&
+      !dateilisteWirdErfasst) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Synchronisierung wird gestartet ...'),
+        duration: Duration(seconds: 5),
+      ),
+    );
+
+    await starteAutomatischeSynchronisierung();
+  } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Synchronisierung läuft bereits.'),
@@ -922,11 +929,33 @@ await ladeSyncBericht();
       if (!mounted) return;
 
       if (!bereit) {
-        debugPrint(
-          'PREDIGTFINDER AUTOSYNC: OneDrive-Dateiliste nicht verfügbar',
-        );
-        return;
-      }
+  debugPrint(
+    'PREDIGTFINDER AUTOSYNC: OneDrive-Dateiliste nicht verfügbar',
+  );
+
+    letzteSynchronisierung = DateTime.now();
+  letzteAnzahlGefunden = 0;
+  letzteAnzahlErfolgreich = predigtTexte.length;
+
+  synchronisierungsFehler['OneDrive'] =
+      'OneDrive-Dateiliste konnte nicht geladen werden.';
+
+  await speichereSyncBericht();
+
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Synchronisierung abgebrochen: '
+          'OneDrive-Dateiliste konnte nicht geladen werden.',
+        ),
+        duration: Duration(seconds: 15),
+      ),
+    );
+  }
+
+  return;
+}
 
       debugPrint(
         'PREDIGTFINDER AUTOSYNC: OneDrive bereit für Dateierfassung',
@@ -988,10 +1017,27 @@ await ladeSyncBericht();
 
 
     } catch (e) {
-      debugPrint('PREDIGTFINDER AUTOSYNC FEHLER: $e');
-    } finally {
-      automatischeSynchronisierungAktiv = false;
-    }
+  debugPrint('PREDIGTFINDER AUTOSYNC FEHLER: $e');
+
+  letzteSynchronisierung = DateTime.now();
+  letzteAnzahlGefunden = predigtDateien.length;
+  letzteAnzahlErfolgreich = predigtTexte.length;
+
+  synchronisierungsFehler['Synchronisierung'] = e.toString();
+
+  await speichereSyncBericht();
+
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Synchronisierung fehlgeschlagen: $e'),
+        duration: const Duration(seconds: 15),
+      ),
+    );
+  }
+} finally {
+  automatischeSynchronisierungAktiv = false;
+}
   }
   Future<void> initialisiereStartdaten() async {
     await initialisierePredigtSpeicher();
