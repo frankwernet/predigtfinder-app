@@ -1,4 +1,5 @@
-﻿import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -63,6 +64,19 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
 
   // Synchronisierungsdiagnose
   final Map<String, String> synchronisierungsFehler = {};
+
+  // Temporäre iOS-Synchronisierungsdiagnose
+  final List<String> syncDiagnose = [];
+
+  void protokolliereSyncDiagnose(String meldung) {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return;
+
+    final zeit = DateTime.now();
+    final eintrag = '${zeit.toIso8601String()} | $meldung';
+
+    syncDiagnose.add(eintrag);
+    debugPrint('PREDIGTFINDER IOS-DIAGNOSE: $eintrag');
+  }
 
   DateTime? letzteSynchronisierung;
   int letzteAnzahlGefunden = 0;
@@ -235,6 +249,16 @@ static const String adminPinSchluessel =
                   'Aktuell lokal gespeichert: '
                   '${predigtTexte.length}',
                 ),
+                const Divider(),
+                const Text(
+                  'iOS-Synchronisierungsdiagnose',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                if (syncDiagnose.isEmpty)
+                  const Text('Noch keine Diagnoseeinträge.')
+                else
+                  SelectableText(syncDiagnose.join('\n')),
                 const Divider(),
                 Text(
                   'Protokollierte Fehler: '
@@ -585,6 +609,7 @@ await ladeSyncBericht();
         'dateienGefunden': letzteAnzahlGefunden,
         'dateienErfolgreich': letzteAnzahlErfolgreich,
         'predigtenGespeichert': predigtTexte.length,
+        'diagnose': List<String>.from(syncDiagnose),
         'fehler': Map<String, String>.from(
           synchronisierungsFehler,
         ),
@@ -902,6 +927,8 @@ await ladeSyncBericht();
 
     automatischeSynchronisierungAktiv = true;
 String syncSchritt = 'Initialisierung';
+    syncDiagnose.clear();
+    protokolliereSyncDiagnose('01 Synchronisierung gestartet');
     try {
       debugPrint('PREDIGTFINDER AUTOSYNC: Gestartet');
 
@@ -919,11 +946,13 @@ String syncSchritt = 'Initialisierung';
       if (!mounted) return;
 
 syncSchritt = 'OneDrive-Seite laden';
+    protokolliereSyncDiagnose('02 OneDrive-Seite laden');
       // Zentral konfigurierten Textordner laden.
       await controller.loadRequest(
         Uri.parse(aktiveOneDriveUrl),
       );
 syncSchritt = 'Auf OneDrive-Dateiliste warten';
+    protokolliereSyncDiagnose('03 Warte auf OneDrive-Dateiliste');
       // Auf die dynamische OneDrive-Dateiliste warten.
       final bereit = await warteAufPredigtDateiliste();
 
@@ -963,6 +992,7 @@ syncSchritt = 'Auf OneDrive-Dateiliste warten';
       );
 
 syncSchritt = 'OneDrive-Dateiliste erfassen';
+    protokolliereSyncDiagnose('04 JavaScript-Dateierfassung starten');
       final dateien = await erfasseDateilisteMitTimeout();
 
       if (!mounted) return;
@@ -1250,7 +1280,25 @@ syncSchritt = 'Predigttexte erfassen';
               }
             }
 
+            if (daten is Map && daten['typ'] == 'syncDiagnose') {
+              final meldung = daten['meldung'];
+              final laufId = daten['laufId'];
+
+              if (laufId == dateilisteLaufnummer &&
+                  dateilisteCompleter != null &&
+                  !dateilisteCompleter!.isCompleted &&
+                  meldung is String) {
+                protokolliereSyncDiagnose(meldung);
+              }
+            }
+
             if (daten is Map && daten['typ'] == 'dateilisteFortschritt') {
+              final anzahl = daten['anzahl'];
+              final schritte = daten['schritte'];
+
+              protokolliereSyncDiagnose(
+                'Fortschritt: $anzahl Dateien, $schritte Scrollschritte',
+              );
               if (mounted) {
                 setState(() {
                   dateilisteGefunden = (daten['anzahl'] as num?)?.toInt() ?? 0;
@@ -1788,6 +1836,13 @@ PredigtFinderVideo.postMessage(JSON.stringify({
       await controller.runJavaScript('''
       (async () => {
         const laufId = $laufnummer;
+
+        PredigtFinder.postMessage(JSON.stringify({
+          typ: 'syncDiagnose',
+          meldung: 'JavaScript gestartet',
+          laufId: laufId
+        }));
+
         const list = Array.from(
           document.querySelectorAll('*')
         ).find(el =>
@@ -1796,10 +1851,19 @@ PredigtFinderVideo.postMessage(JSON.stringify({
         );
 
         if (!list) {
-          return JSON.stringify({
-            fehler: 'Scrollbereich nicht gefunden'
-          });
+          PredigtFinder.postMessage(JSON.stringify({
+            typ: 'syncDiagnose',
+            meldung: 'FEHLER: Scrollbereich nicht gefunden',
+            laufId: laufId
+          }));
+          return 'Scrollbereich nicht gefunden';
         }
+
+        PredigtFinder.postMessage(JSON.stringify({
+          typ: 'syncDiagnose',
+          meldung: 'Scrollbereich gefunden',
+          laufId: laufId
+        }));
 
         const found = new Set();
 
