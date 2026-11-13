@@ -10,6 +10,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'predigtfinder_config.dart';
 
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 void main() {
   runApp(const PredigtFinderApp());
@@ -59,6 +60,402 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
   bool videoWirdGeladen = false;
   bool testmenueFreigeschaltet = false;
   bool testfunktionenAnzeigen = false;
+
+  // Synchronisierungsdiagnose
+  final Map<String, String> synchronisierungsFehler = {};
+
+  DateTime? letzteSynchronisierung;
+  int letzteAnzahlGefunden = 0;
+  int letzteAnzahlErfolgreich = 0;
+
+  // Administratorbereich
+  bool adminAngemeldet = false;
+  bool adminBereichAnzeigen = false;
+
+  // Geschützter lokaler Speicher für die Administrator-PIN.
+final FlutterSecureStorage adminSpeicher =
+    const FlutterSecureStorage();
+
+static const String adminPinSchluessel =
+    'predigtfinder_admin_pin';
+
+
+  Future<bool> adminPinVorhanden() async {
+    final pin = await adminSpeicher.read(
+      key: adminPinSchluessel,
+    );
+
+    return pin != null && pin.length == 4;
+  }
+
+  Future<bool> adminPinPruefen(String eingabe) async {
+    final gespeichertePin = await adminSpeicher.read(
+      key: adminPinSchluessel,
+    );
+
+    return gespeichertePin != null &&
+        gespeichertePin == eingabe;
+  }
+
+  Future<void> adminPinSpeichern(String neuePin) async {
+    if (!RegExp(r'^[0-9]{4}$').hasMatch(neuePin)) {
+      throw ArgumentError(
+        'Die Administrator-PIN muss genau vier Ziffern haben.',
+      );
+    }
+
+    await adminSpeicher.write(
+      key: adminPinSchluessel,
+      value: neuePin,
+    );
+  }
+
+
+  Future<void> adminPinAendern() async {
+    if (!adminAngemeldet) return;
+
+    final altePinController = TextEditingController();
+    final neuePinController = TextEditingController();
+    final bestaetigungController = TextEditingController();
+
+    try {
+      final speichern = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Administrator-PIN ändern'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final feld in [
+                  (altePinController, 'Bisherige PIN'),
+                  (neuePinController, 'Neue PIN'),
+                  (bestaetigungController, 'Neue PIN bestätigen'),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextField(
+                      controller: feld.$1,
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      maxLength: 4,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
+                      decoration: InputDecoration(
+                        labelText: feld.$2,
+                        counterText: '',
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('PIN ändern'),
+            ),
+          ],
+        ),
+      );
+
+      if (speichern != true || !mounted) return;
+
+      String meldung;
+
+      if (!await adminPinPruefen(altePinController.text)) {
+        meldung = 'Die bisherige PIN ist falsch.';
+      } else if (!RegExp(r'^[0-9]{4}$')
+          .hasMatch(neuePinController.text)) {
+        meldung = 'Die neue PIN muss genau vier Ziffern haben.';
+      } else if (neuePinController.text !=
+          bestaetigungController.text) {
+        meldung = 'Die neuen PIN-Eingaben stimmen nicht überein.';
+      } else {
+        await adminPinSpeichern(neuePinController.text);
+        meldung = 'Administrator-PIN erfolgreich geändert.';
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(meldung)),
+      );
+    } catch (e) {
+      debugPrint('PREDIGTFINDER PIN-ÄNDERUNG FEHLER: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PIN konnte nicht geändert werden.'),
+          ),
+        );
+      }
+    } finally {
+      altePinController.dispose();
+      neuePinController.dispose();
+      bestaetigungController.dispose();
+    }
+  }
+
+
+  Future<void> syncBerichtAnzeigen() async {
+    if (!adminAngemeldet || !mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Synchronisierungsbericht'),
+        content: SizedBox(
+          width: 400,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Letzte Synchronisierung: '
+                  '${letzteSynchronisierung?.toLocal().toString().substring(0, 16) ?? "Noch keine"}',
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'OneDrive-Dateien gefunden: '
+                  '$letzteAnzahlGefunden',
+                ),
+                Text(
+                  'Predigten beim letzten Sync gespeichert: '
+                  '$letzteAnzahlErfolgreich',
+                ),
+                Text(
+                  'Aktuell lokal gespeichert: '
+                  '${predigtTexte.length}',
+                ),
+                const Divider(),
+                Text(
+                  'Protokollierte Fehler: '
+                  '${synchronisierungsFehler.length}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (synchronisierungsFehler.isEmpty)
+                  const Text('Keine Fehler protokolliert.')
+                else
+                  ...synchronisierungsFehler.entries.map(
+                    (eintrag) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            eintrag.key,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            eintrag.value,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Schließen'),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  Future<void> adminMenueAnzeigen() async {
+    if (!adminAngemeldet || !mounted) return;
+
+    final auswahl = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('PredigtFinder – Administration'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.assessment_outlined),
+              title: const Text('Synchronisierungsbericht'),
+              onTap: () =>
+                  Navigator.pop(dialogContext, 'bericht'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.sync),
+              title: const Text('Synchronisierung erneut starten'),
+              onTap: () =>
+                  Navigator.pop(dialogContext, 'sync'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.key),
+              title: const Text('Administrator-PIN ändern'),
+              onTap: () =>
+                  Navigator.pop(dialogContext, 'pin'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Abmelden'),
+              onTap: () =>
+                  Navigator.pop(dialogContext, 'logout'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Schließen'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+
+    switch (auswahl) {
+      case 'pin':
+        await adminPinAendern();
+        break;
+
+      case 'sync':
+        if (!automatischeSynchronisierungAktiv &&
+            !hintergrundErfassungAktiv &&
+            !dateilisteWirdErfasst) {
+          await starteAutomatischeSynchronisierung();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Synchronisierung läuft bereits.'),
+            ),
+          );
+        }
+        break;
+
+      case 'logout':
+        setState(() {
+          adminAngemeldet = false;
+          adminBereichAnzeigen = false;
+        });
+        break;
+
+      case 'bericht':
+  await syncBerichtAnzeigen();
+  break;
+    }
+  }
+
+
+  Future<void> adminAnmelden() async {
+    final pinVorhanden = await adminPinVorhanden();
+
+    if (!mounted) return;
+
+    final pinController = TextEditingController();
+
+    try {
+      final eingabe = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            pinVorhanden
+                ? 'Administrator-Anmeldung'
+                : 'Administrator-PIN festlegen',
+          ),
+          content: TextField(
+            controller: pinController,
+            autofocus: true,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+            decoration: const InputDecoration(
+              labelText: 'Vierstellige PIN',
+              counterText: '',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  pinController.text,
+                );
+              },
+              child: Text(
+                pinVorhanden ? 'Anmelden' : 'PIN speichern',
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (!mounted || eingabe == null) return;
+
+      if (!RegExp(r'^[0-9]{4}$').hasMatch(eingabe)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Bitte genau vier Ziffern eingeben.'),
+          ),
+        );
+        return;
+      }
+
+      if (!pinVorhanden) {
+        await adminPinSpeichern(eingabe);
+      } else if (!await adminPinPruefen(eingabe)) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Falsche Administrator-PIN')),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        adminAngemeldet = true;
+        adminBereichAnzeigen = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Administrator erfolgreich angemeldet'),
+        ),
+      );
+      await adminMenueAnzeigen();
+    } finally {
+      pinController.dispose();
+    }
+  }
+
 
   final TextEditingController suchfeld1 = TextEditingController();
   final TextEditingController suchfeld2 = TextEditingController();
@@ -137,6 +534,8 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
     // Danach lokale Daten ergänzen.
     // Lokale Fassungen haben Vorrang.
     await ladePredigtenLokal();
+    // Gespeicherten Synchronisierungsbericht laden.
+await ladeSyncBericht();
 
     if (!mounted) return;
 
@@ -158,6 +557,111 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
 
     return File('${verzeichnis.path}/predigtfinder_texte.json');
   }
+
+
+  Future<File> lokaleSyncBerichtDatei() async {
+    final verzeichnis = await getApplicationDocumentsDirectory();
+
+    return File(
+      '${verzeichnis.path}/predigtfinder_sync_report.json',
+    );
+  }
+
+  Future<void> speichereSyncBericht() async {
+    try {
+      final datei = await lokaleSyncBerichtDatei();
+      final tempDatei = File('${datei.path}.tmp');
+
+      final bericht = {
+        'version': 1,
+        'zeitpunkt': DateTime.now().toIso8601String(),
+        'dateienGefunden': letzteAnzahlGefunden,
+        'dateienErfolgreich': letzteAnzahlErfolgreich,
+        'predigtenGespeichert': predigtTexte.length,
+        'fehler': Map<String, String>.from(
+          synchronisierungsFehler,
+        ),
+      };
+
+      await tempDatei.writeAsString(
+        jsonEncode(bericht),
+        flush: true,
+      );
+
+      if (await datei.exists()) {
+        await datei.delete();
+      }
+
+      await tempDatei.rename(datei.path);
+
+      debugPrint(
+        'PREDIGTFINDER SYNC-BERICHT GESPEICHERT: '
+        '${synchronisierungsFehler.length} Fehlereinträge',
+      );
+    } catch (e) {
+      debugPrint(
+        'PREDIGTFINDER SYNC-BERICHT SPEICHERFEHLER: $e',
+      );
+    }
+  }
+
+
+  Future<void> ladeSyncBericht() async {
+    try {
+      final datei = await lokaleSyncBerichtDatei();
+
+      if (!await datei.exists()) {
+        debugPrint(
+          'PREDIGTFINDER SYNC-BERICHT: Noch nicht vorhanden',
+        );
+        return;
+      }
+
+      final inhalt = await datei.readAsString();
+      final daten = jsonDecode(inhalt);
+
+      if (daten is! Map) {
+        throw const FormatException(
+          'Ungültiges Synchronisierungsbericht-Format',
+        );
+      }
+
+      final fehler = Map<String, String>.from(
+        daten['fehler'] ?? <String, String>{},
+      );
+
+      final zeitpunkt = daten['zeitpunkt'];
+
+      if (!mounted) return;
+
+      setState(() {
+        synchronisierungsFehler
+          ..clear()
+          ..addAll(fehler);
+
+        letzteAnzahlGefunden =
+            (daten['dateienGefunden'] as num?)?.toInt() ?? 0;
+
+        letzteAnzahlErfolgreich =
+            (daten['dateienErfolgreich'] as num?)?.toInt() ?? 0;
+
+        letzteSynchronisierung =
+            zeitpunkt is String
+                ? DateTime.tryParse(zeitpunkt)
+                : null;
+      });
+
+      debugPrint(
+        'PREDIGTFINDER SYNC-BERICHT GELADEN: '
+        '${synchronisierungsFehler.length} Fehlereinträge',
+      );
+    } catch (e) {
+      debugPrint(
+        'PREDIGTFINDER SYNC-BERICHT LADEFEHLER: $e',
+      );
+    }
+  }
+
 
   Future<void> _letzterSpeichervorgang = Future.value();
 
@@ -467,6 +971,22 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
         '${predigtTexte.length} Predigten gespeichert, '
         '${neueDateien.length} neue Dateien',
       );
+
+
+      // Synchronisierungsbericht aktualisieren.
+      letzteSynchronisierung = DateTime.now();
+      letzteAnzahlGefunden = dateien.length;
+      letzteAnzahlErfolgreich = predigtTexte.length;
+
+      // Bericht dauerhaft speichern.
+      await speichereSyncBericht();
+
+      debugPrint(
+        'PREDIGTFINDER AUTOSYNC: '
+        'Synchronisierungsbericht aktualisiert',
+      );
+
+
     } catch (e) {
       debugPrint('PREDIGTFINDER AUTOSYNC FEHLER: $e');
     } finally {
@@ -794,6 +1314,44 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
       );
   }
 
+
+
+  Future<bool> stelleOneDriveDateilisteWiederHer() async {
+    debugPrint(
+      'PREDIGTFINDER WIEDERHERSTELLUNG: Starte',
+    );
+
+    try {
+      await controller.loadRequest(
+        Uri.parse(aktiveOneDriveUrl),
+      );
+
+      final bereit = await warteAufPredigtDateiliste();
+
+      if (!bereit) {
+        debugPrint(
+          'PREDIGTFINDER WIEDERHERSTELLUNG: '
+          'Dateiliste nicht bereit',
+        );
+        return false;
+      }
+
+      debugPrint(
+        'PREDIGTFINDER WIEDERHERSTELLUNG: Erfolgreich',
+      );
+
+      return true;
+    } catch (e) {
+      debugPrint(
+        'PREDIGTFINDER WIEDERHERSTELLUNG FEHLER: $e',
+      );
+      return false;
+    }
+  }
+
+
+
+
   Future<bool> testClosePreview() async {
     try {
       final result = await controller.runJavaScriptReturningResult(r'''
@@ -804,10 +1362,23 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
           )
         );
 
-        const kandidaten = buttons.filter(el =>
-          (el.getAttribute('aria-label') || '')
-            .toLowerCase() === 'close'
-        );
+       
+const kandidaten = buttons.filter(el => {
+  const label = (
+    el.getAttribute('aria-label') ||
+    el.getAttribute('title') ||
+    ''
+  ).trim().toLowerCase();
+
+  return [
+    'close',
+    'schließen',
+    'schliessen',
+    'close preview',
+    'vorschau schließen'
+  ].includes(label);
+});
+
 
         if (kandidaten.length !== 1) {
           return false;
@@ -1443,27 +2014,79 @@ return 'Ergebnis gesendet';      })();
             throw Exception('Text nicht gespeichert');
           }
 
-          erfolgreich++;
+          // Erfolgreich eingelesene Predigt
+erfolgreich++;
+
+// Eventuellen früheren Fehler entfernen.
+synchronisierungsFehler.remove(dateiname);
+
+debugPrint(
+  'PREDIGTFINDER ERFOLGREICH: $dateiname',
+);
+        
         } catch (e) {
           fehlerhafteDateien.add(dateiname);
 
-          // Vorherige Daten bei einem Fehler wiederherstellen
+          // Fehler für den Administrator protokollieren.
+          synchronisierungsFehler[dateiname] = e.toString();
+
+          // Vorherige Daten bei einem Fehler wiederherstellen.
           predigtTexte.addAll(alteTexte);
           videoDateinamen.addAll(alteVideos);
 
-          debugPrint('PREDIGTFINDER DATEIFEHLER: $dateiname | $e');
-        } finally {
+          debugPrint(
+            'PREDIGTFINDER DATEIFEHLER: $dateiname | $e',
+          );
+        }
+
+        finally {
           geschlossen = await testClosePreview();
         }
 
+        
         if (!geschlossen) {
           debugPrint(
-            'PREDIGTFINDER ABBRUCH: '
-            'TXT-Vorschau nicht sicher geschlossen',
+            'PREDIGTFINDER SCHLIESSFEHLER: $dateiname',
           );
-          gestoppt = true;
-          break;
+          synchronisierungsFehler[dateiname] =
+    'OneDrive-Textvorschau konnte nicht geschlossen werden';
+
+          // Erneut versuchen, die Textvorschau zu schließen.
+          for (var versuch = 0; versuch < 3; versuch++) {
+            await Future.delayed(
+              const Duration(milliseconds: 800),
+            );
+
+            geschlossen = await testClosePreview();
+
+            if (geschlossen) break;
+          }
+
+          if (!geschlossen) {
+            debugPrint(
+              'PREDIGTFINDER WIEDERHERSTELLUNG: $dateiname',
+            );
+
+            final wiederhergestellt =
+                await stelleOneDriveDateilisteWiederHer();
+
+            if (!wiederhergestellt) {
+              debugPrint(
+                'PREDIGTFINDER ABBRUCH: '
+                'OneDrive-Dateiliste nicht wiederherstellbar',
+              );
+
+              gestoppt = true;
+              break;
+            }
+
+            debugPrint(
+              'PREDIGTFINDER FORTSETZUNG: '
+              'Dateiliste wiederhergestellt',
+            );
+          }
         }
+
 
         if (erfassungAbbrechen) {
           debugPrint('PREDIGTFINDER ERFASSUNG ABGEBROCHEN');
@@ -1523,6 +2146,36 @@ return 'Ergebnis gesendet';      })();
   Future<void> testDreiPredigten() async {
     await erfassePredigten(10);
   }
+
+
+  void alleFilterZuruecksetzen() {
+    setState(() {
+      suchfeld1.clear();
+      suchfeld2.clear();
+      suchfeld3.clear();
+
+      verknuepfung1 = 'UND';
+      verknuepfung2 = 'UND';
+
+      suchErgebnisse.clear();
+      suchTrefferzahlen.clear();
+      sucheAktiv = false;
+
+      markierteDatei = null;
+      videoAnsichtAnzeigen = false;
+      predigtVorschauAnzeigen = false;
+
+      status = 'Alle Suchfilter zurückgesetzt';
+    });
+
+    debugPrint(
+      'PREDIGTFINDER FILTER ZURÜCKGESETZT: '
+      '${predigtDateien.length} Dateien in der Liste, '
+      '${predigtTexte.length} Texte gespeichert',
+    );
+  }
+
+
 
   void suchePredigten() {
     final begriffe = [
@@ -2122,8 +2775,17 @@ while (schritte < 600) {
             Text('PredigtFinder', style: TextStyle(fontSize: 12)),
           ],
         ),
+       
         actions: [
+          IconButton(
+            tooltip: 'Administration',
+            icon: const Icon(Icons.lock_outline),
+            
+            onPressed: adminAnmelden,
+            
+          ),
           PopupMenuButton<String>(
+
             tooltip: 'Kontakt und Informationen',
             icon: const Icon(Icons.more_vert),
             onSelected: (wert) {
@@ -2257,6 +2919,18 @@ while (schritte < 600) {
                     icon: const Icon(Icons.search),
                     label: const Text('Predigten suchen'),
                   ),
+
+
+
+const SizedBox(height: 6),
+
+OutlinedButton.icon(
+  onPressed: alleFilterZuruecksetzen,
+  icon: const Icon(Icons.restart_alt),
+  label: const Text('Alle Filter zurücksetzen'),
+),
+
+
                 ],
               ),
             ),
