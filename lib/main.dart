@@ -1289,6 +1289,14 @@ syncSchritt = 'Predigttexte erfassen';
                   !dateilisteCompleter!.isCompleted &&
                   meldung is String) {
                 protokolliereSyncDiagnose(meldung);
+
+                if (meldung == 'iOS-Scrolllimit nach 60 Sekunden erreicht' &&
+                    dateilisteCompleter != null &&
+                    !dateilisteCompleter!.isCompleted) {
+                  dateilisteCompleter!.completeError(
+                    StateError('iOS-Dateierfassung: 60-Sekunden-Limit erreicht'),
+                  );
+                }
               }
             }
 
@@ -1905,6 +1913,25 @@ PredigtFinderVideo.postMessage(JSON.stringify({
         const found = new Set();
 
         const collect = () => {
+          // iOS: Dateinamen aus HTML-Attributen erfassen
+          if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+            const elemente = document.querySelectorAll(
+              '[title], [aria-label]'
+            );
+
+            for (const el of elemente) {
+              for (const attribut of ['title', 'aria-label']) {
+                const name = (el.getAttribute(attribut) || '').trim();
+
+                if (name.length > 4 &&
+                    name.length < 260 &&
+                    name.toLowerCase().endsWith('.txt')) {
+                  found.add(name);
+                }
+              }
+            }
+          }
+
           const lines = document.body.innerText.split(
             String.fromCharCode(10)
           );
