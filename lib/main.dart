@@ -1785,7 +1785,7 @@ PredigtFinderVideo.postMessage(JSON.stringify({
       status = 'Dateiliste wird erfasst ...';
     });
     try {
-      final result = await controller.runJavaScriptReturningResult('''
+      await controller.runJavaScript('''
       (async () => {
         const laufId = $laufnummer;
         const list = Array.from(
@@ -1889,7 +1889,7 @@ PredigtFinder.postMessage(JSON.stringify({
 return 'Ergebnis gesendet';      })();
     ''');
 
-      debugPrint('PREDIGTFINDER ALLE DATEIEN: $result');
+      debugPrint('PREDIGTFINDER DATEILISTE: JavaScript gestartet');
 
       if (!mounted) return;
 
