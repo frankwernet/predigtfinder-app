@@ -1865,6 +1865,43 @@ PredigtFinderVideo.postMessage(JSON.stringify({
           laufId: laufId
         }));
 
+        // Temporäre Diagnose der iOS-Dateinamen-Erkennung
+        if (laufId === $laufnummer) {
+          const bodyText = document.body.innerText || '';
+
+          const txtTreffer =
+            bodyText.match(/[.]txt/gi) || [];
+
+          const htmlTreffer = Array.from(
+            document.querySelectorAll(
+              '[title], [aria-label], [data-automationid]'
+            )
+          ).filter(el => {
+            const text = [
+              el.getAttribute('title') || '',
+              el.getAttribute('aria-label') || '',
+              el.textContent || ''
+            ].join(' ');
+
+            return /[.]txt/i.test(text);
+          });
+
+          PredigtFinder.postMessage(JSON.stringify({
+            typ: 'syncDiagnose',
+            laufId: laufId,
+            meldung:
+              'DOM: ' + bodyText.length +
+              ' Zeichen, TXT-Vorkommen: ' +
+              txtTreffer.length +
+              ', HTML-Treffer: ' +
+              htmlTreffer.length +
+              ', Scrollposition: ' +
+              list.scrollTop +
+              ', Scrollhöhe: ' +
+              list.scrollHeight
+          }));
+        }
+
         const found = new Set();
 
         const collect = () => {
@@ -1942,6 +1979,13 @@ PredigtFinderVideo.postMessage(JSON.stringify({
             break;
           }
         }
+
+PredigtFinder.postMessage(JSON.stringify({
+  typ: 'syncDiagnose',
+  laufId: laufId,
+  meldung: 'Dateierfassung abgeschlossen: ' +
+    found.size + ' Dateien nach ' + steps + ' Scrollschritten'
+}));
 
 PredigtFinder.postMessage(JSON.stringify({
   laufId: laufId,
@@ -3276,7 +3320,7 @@ OutlinedButton.icon(
                                 }
 
                                 return dateiname.replaceFirst(
-                                  RegExp(r'\.txt$', caseSensitive: false),
+                                  RegExp(r'[.]txt$', caseSensitive: false),
                                   '',
                                 );
                               })(),
