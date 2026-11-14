@@ -2514,10 +2514,30 @@ debugPrint(
         }
 
         finally {
-          geschlossen = await testClosePreview();
+          if (defaultTargetPlatform == TargetPlatform.iOS) {
+            // iOS: Nach dem Einleseversuch die Dateiliste
+            // kontrolliert wiederherstellen.
+            geschlossen = await stelleOneDriveDateilisteWiederHer();
+          } else {
+            // Android: Bisheriges Verhalten beibehalten.
+            geschlossen = await testClosePreview();
+          }
         }
 
         
+        if (!geschlossen &&
+            defaultTargetPlatform == TargetPlatform.iOS) {
+          debugPrint(
+            'PREDIGTFINDER IOS WIEDERHERSTELLUNG FEHLGESCHLAGEN: $dateiname',
+          );
+
+          synchronisierungsFehler[dateiname] =
+              'iOS: OneDrive-Dateiliste konnte nicht wiederhergestellt werden';
+
+          gestoppt = true;
+          break;
+        }
+
         if (!geschlossen) {
           debugPrint(
             'PREDIGTFINDER SCHLIESSFEHLER: $dateiname',
