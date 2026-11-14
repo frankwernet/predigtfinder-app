@@ -1278,6 +1278,17 @@ syncSchritt = 'Predigttexte erfassen';
                 openSelectedVideo(video);
               }
             }
+            if (daten is Map && daten['typ'] == 'iosSchliessDiagnose') {
+              if (defaultTargetPlatform == TargetPlatform.iOS) {
+                final anzahl = daten['kandidaten'];
+                final schaltflaechen = daten['schaltflaechen'];
+
+                protokolliereSyncDiagnose(
+                  'iOS Vorschau: $anzahl Schliess-Kandidaten | '
+                  'Buttons: $schaltflaechen',
+                );
+              }
+            }
             if (daten is Map && daten['typ'] == 'dateiOeffnen') {
               if (daten['erfolg'] == true && mounted) {
                 setState(() {
@@ -1510,6 +1521,19 @@ const kandidaten = buttons.filter(el => {
 });
 
 
+        // iOS-Diagnose: Schaltflächen erfassen, Verhalten unverändert.
+        if (kandidaten.length !== 1) {
+          const details = buttons.map(el => ({
+            label: el.getAttribute('aria-label') || '',
+            title: el.getAttribute('title') || ''
+          })).filter(e => e.label || e.title).slice(0, 20);
+
+          PredigtFinder.postMessage(JSON.stringify({
+            typ: 'iosSchliessDiagnose',
+            kandidaten: kandidaten.length,
+            schaltflaechen: details
+          }));
+        }
         if (kandidaten.length !== 1) {
           return false;
         }
