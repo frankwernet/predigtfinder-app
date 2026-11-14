@@ -1280,6 +1280,17 @@ syncSchritt = 'Predigttexte erfassen';
               }
             }
 
+            if (daten is Map && daten['typ'] == 'dateilisteFehler') {
+              if (daten['laufId'] == dateilisteLaufnummer &&
+                  dateilisteCompleter != null &&
+                  !dateilisteCompleter!.isCompleted) {
+                final meldung = daten['meldung']?.toString() ?? 'Unbekannter Fehler';
+                protokolliereSyncDiagnose('FEHLER: $meldung');
+                dateilisteCompleter!.completeError(StateError(meldung));
+              }
+              return;
+            }
+
             if (daten is Map && daten['typ'] == 'syncDiagnose') {
               final meldung = daten['meldung'];
               final laufId = daten['laufId'];
@@ -1826,6 +1837,85 @@ PredigtFinderVideo.postMessage(JSON.stringify({
       }
     }
   }
+  // iOS: asynchronen WebView-Auftrag ohne langes Await starten.
+  Future<void> starteIosDateiliste(int laufnummer) async {
+    await controller.runJavaScript('''
+      (() => {
+        const laufId = $laufnummer;
+        const senden = daten => PredigtFinder.postMessage(
+          JSON.stringify({laufId: laufId, ...daten})
+        );
+        const warten = ms => new Promise(r => setTimeout(r, ms));
+        const arbeiten = async () => {
+          senden({typ: 'syncDiagnose', meldung: 'iOS-Erfassung gestartet'});
+          const liste = Array.from(document.querySelectorAll('[id^="html-list_"]'))
+            .find(el => el.scrollHeight > el.clientHeight);
+          if (!liste) throw Error('Scrollbereich nicht gefunden');
+          const gefunden = new Set();
+          const sammeln = () => {
+            for (const el of document.querySelectorAll('[title], [aria-label], [role="row"]')) {
+              const namen = [el.getAttribute('title'), el.getAttribute('aria-label')];
+              if (el.getAttribute('role') === 'row') {
+                namen.push((el.innerText || '').split(String.fromCharCode(10))[0]);
+              }
+              for (const wert of namen) {
+                const name = (wert || '').trim();
+                if (name.length > 4 && name.length < 260 &&
+                    name.toLowerCase().endsWith('.txt') &&
+                    !name.includes('/')) gefunden.add(name);
+              }
+            }
+          };
+          liste.scrollTop = 0;
+          await warten(700);
+          sammeln();
+          let stillstand = 0;
+          let stabil = 0;
+          let letzteHoehe = -1;
+          let letzteAnzahl = -1;
+          const beginn = Date.now();
+          for (let schritt = 0; schritt < 180 && Date.now() - beginn < 70000; schritt++) {
+            sammeln();
+            const vorher = liste.scrollTop;
+            const maximum = Math.max(0, liste.scrollHeight - liste.clientHeight);
+            if (vorher >= maximum - 2) {
+              await warten(1000);
+              sammeln();
+              if (liste.scrollHeight === letzteHoehe &&
+                  gefunden.size === letzteAnzahl) stabil++;
+              else stabil = 0;
+              letzteHoehe = liste.scrollHeight;
+              letzteAnzahl = gefunden.size;
+              if (stabil >= 4) {
+                if (gefunden.size === 0) throw Error('Keine TXT-Dateien gefunden');
+                senden({typ: 'syncDiagnose', meldung: 'Listenende erreicht: ' + gefunden.size});
+                senden({dateien: Array.from(gefunden).sort(), anzahl: gefunden.size,
+                  schritte: schritt});
+                return;
+              }
+              liste.scrollTop = liste.scrollHeight;
+            } else {
+              liste.scrollTop = Math.min(vorher + Math.max(100, liste.clientHeight / 2), maximum);
+              await warten(450);
+              if (liste.scrollTop <= vorher + 1) {
+                stillstand++;
+                if (stillstand >= 4) throw Error('Scrollposition bewegt sich nicht');
+              } else stillstand = 0;
+            }
+            if (schritt % 3 === 0) {
+              senden({typ: 'dateilisteFortschritt', anzahl: gefunden.size, schritte: schritt});
+              senden({typ: 'syncDiagnose', meldung: 'Scroll ' + schritt +
+                ': ' + liste.scrollTop + '/' + maximum + ', Dateien ' + gefunden.size});
+            }
+          }
+          throw Error('Listenende nicht sicher erreicht (' + gefunden.size + ' Dateien)');
+        };
+        void arbeiten().catch(e => senden({typ: 'dateilisteFehler',
+          meldung: String(e && e.message || e)}));
+      })();
+    ''');
+  }
+
   Future<void> testFileList() async {
     if (dateilisteWirdErfasst) return;
 
@@ -1841,6 +1931,10 @@ PredigtFinderVideo.postMessage(JSON.stringify({
       status = 'Dateiliste wird erfasst ...';
     });
     try {
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        await starteIosDateiliste(laufnummer);
+        return;
+      }
       await controller.runJavaScript('''
       (async () => {
         const laufId = $laufnummer;
