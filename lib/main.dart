@@ -75,6 +75,11 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
     final eintrag = '${zeit.toIso8601String()} | $meldung';
 
     syncDiagnose.add(eintrag);
+
+    // Maximal 200 aktuelle Diagnoseeinträge behalten.
+    if (syncDiagnose.length > 200) {
+      syncDiagnose.removeRange(0, syncDiagnose.length - 200);
+    }
     debugPrint('PREDIGTFINDER IOS-DIAGNOSE: $eintrag');
   }
 
@@ -1256,7 +1261,30 @@ syncSchritt = 'Predigttexte erfassen';
           try {
             final daten = jsonDecode(message.message);
 
+            if (daten is Map && daten['typ'] == 'iosEditorFehlt') {
+              if (defaultTargetPlatform == TargetPlatform.iOS) {
+                final dateiname = daten['dateiname']?.toString() ?? '';
+                final meldung = 'iOS Editor fehlt: $dateiname';
+
+                if (!syncDiagnose.any((eintrag) =>
+                    eintrag.contains(meldung))) {
+                  protokolliereSyncDiagnose(meldung);
+                }
+              }
+            }
             if (daten is Map && daten['typ'] == 'modellPruefung') {
+              if (defaultTargetPlatform == TargetPlatform.iOS) {
+                final erwartet = daten['erwartet']?.toString() ?? '';
+                final aktuell = daten['aktuell']?.toString() ?? '';
+                final zeichen = daten['textZeichen'];
+
+                if (zeichen is num) {
+                  protokolliereSyncDiagnose(
+                    'iOS Textpruefung: erwartet=$erwartet | '
+                    'aktuell=$aktuell | Zeichen=$zeichen',
+                  );
+                }
+              }
               debugPrint(
                 'PREDIGTFINDER MODELLPRÜFUNG: '
                 'erwartet=${daten['erwartet']} | '
@@ -1573,6 +1601,10 @@ const kandidaten = buttons.filter(el => {
             typeof window.monaco === 'undefined' ||
             !window.monaco.editor
           ) {
+            PredigtFinder.postMessage(JSON.stringify({
+              typ: 'iosEditorFehlt',
+              dateiname: erwarteterName
+            }));
             return false;
           }
 
