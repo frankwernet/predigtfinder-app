@@ -1295,6 +1295,18 @@ syncSchritt = 'Predigttexte erfassen';
               );
             }
 
+            if (daten is Map && daten['typ'] == 'dateinameTest') {
+              if (defaultTargetPlatform == TargetPlatform.iOS) {
+                protokolliereSyncDiagnose(
+                  'iOS DATEITEST: '
+                  'Datei=${daten['dateiname']} | '
+                  'TXT=${daten['dateinameGueltig']} | '
+                  'Video=${daten['videoDateiname']} | '
+                  'MP4=${daten['videoGueltig']} | '
+                  'Zeichen=${daten['textZeichen']}',
+                );
+              }
+            }
             if (daten is Map && daten['typ'] == 'predigtInhalt') {
               final video = daten['videoDateiname'];
 
