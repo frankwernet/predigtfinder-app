@@ -1035,6 +1035,9 @@ syncSchritt = 'Predigttexte erfassen';
       );
 
 
+      // Ein früherer Timeout ist nach einem erfolgreichen Lauf nicht aktuell.
+      synchronisierungsFehler.remove('Synchronisierung');
+      synchronisierungsFehler.remove('OneDrive');
       // Synchronisierungsbericht aktualisieren.
       letzteSynchronisierung = DateTime.now();
       letzteAnzahlGefunden = dateien.length;
@@ -1805,6 +1808,9 @@ PredigtFinderVideo.postMessage(JSON.stringify({
   }
 
   Future<List<String>> erfasseDateilisteMitTimeout() async {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return erfasseIosDateilisteSchrittweise();
+    }
     if (dateilisteWirdErfasst) {
       throw StateError('Dateilisten-Erfassung läuft bereits');
     }
@@ -1837,6 +1843,161 @@ PredigtFinderVideo.postMessage(JSON.stringify({
       }
     }
   }
+  // iOS: Jeder WebView-Aufruf ist synchron und kurz. Flutter steuert die
+  // Pausen; dadurch läuft keine lange JavaScript-Promise in WKWebView.
+  Future<List<String>> erfasseIosDateilisteSchrittweise() async {
+    if (dateilisteWirdErfasst) {
+      throw StateError('Dateilisten-Erfassung läuft bereits');
+    }
+    final lauf = ++dateilisteLaufnummer;
+    final gefunden = <String>{};
+    final beginn = DateTime.now();
+    var stabil = 0;
+    var stillstand = 0;
+    var letzteHoehe = -1;
+    var letzteAnzahl = -1;
+    var endeErreicht = false;
+
+    setState(() {
+      dateilisteWirdErfasst = true;
+      dateilisteGefunden = 0;
+      status = 'iOS-Dateiliste wird schrittweise erfasst ...';
+    });
+    protokolliereSyncDiagnose('iOS: Flutter-gesteuerte Erfassung gestartet');
+    try {
+      for (var schritt = 0; schritt < 220; schritt++) {
+        if (!mounted) throw StateError('Ansicht wurde geschlossen');
+        if (DateTime.now().difference(beginn) > const Duration(seconds: 115)) {
+          throw TimeoutException('iOS-Dateiliste: Zeitlimit 115 Sekunden');
+        }
+        // JavaScript liefert sofort eine JSON-Zeichenfolge zurück.
+        final antwort = await controller.runJavaScriptReturningResult(r'''
+          (() => {
+            const liste = Array.from(
+              document.querySelectorAll('[id^="html-list_"]')
+            ).find(el => el.scrollHeight > el.clientHeight);
+            if (!liste) return JSON.stringify({fehler: 'Scrollbereich fehlt'});
+            const namen = new Set();
+            const add = wert => {
+              const name = (wert || '').trim();
+              if (name.length > 4 && name.length < 260 &&
+                  name.toLowerCase().endsWith('.txt') &&
+                  !name.includes('/') && !name.includes(String.fromCharCode(92))) {
+                namen.add(name);
+              }
+            };
+            for (const el of document.querySelectorAll(
+              '[title], [aria-label], [role="row"]'
+            )) {
+              add(el.getAttribute('title'));
+              add(el.getAttribute('aria-label'));
+              if (el.getAttribute('role') === 'row') {
+                add((el.innerText || '').split(String.fromCharCode(10))[0]);
+              }
+            }
+            const vorher = liste.scrollTop;
+            const maximum = Math.max(0, liste.scrollHeight - liste.clientHeight);
+            const amEnde = vorher >= maximum - 2;
+            if (!amEnde) {
+              liste.scrollTop = Math.min(
+                vorher + Math.max(100, liste.clientHeight / 2), maximum
+              );
+            }
+            return JSON.stringify({
+              dateien: Array.from(namen),
+              vorher: vorher, nachher: liste.scrollTop,
+              hoehe: liste.scrollHeight, maximum: maximum,
+              amEnde: amEnde
+            });
+          })();
+        ''').timeout(const Duration(seconds: 12));
+        // iOS liefert normalerweise einen JSON-String; Android ist hier
+        // nicht betroffen. Eventuelle zusätzliche Anführungszeichen abfangen.
+        dynamic daten = antwort;
+        if (daten is String) daten = jsonDecode(daten);
+        if (daten is String) daten = jsonDecode(daten);
+        if (daten is! Map) throw const FormatException('Ungültige iOS-Antwort');
+        if (daten['fehler'] != null) throw StateError('${daten['fehler']}');
+        final liste = daten['dateien'];
+        if (liste is! List) throw const FormatException('Dateiliste fehlt');
+        gefunden.addAll(liste.whereType<String>());
+        final vorher = (daten['vorher'] as num).toDouble();
+        final nachher = (daten['nachher'] as num).toDouble();
+        final hoehe = (daten['hoehe'] as num).toInt();
+        final amEnde = daten['amEnde'] == true;
+        if (schritt % 4 == 0 || amEnde) {
+          protokolliereSyncDiagnose(
+            'Schritt $schritt: ${gefunden.length} Dateien, '
+            'Scroll ${nachher.toStringAsFixed(0)}, Höhe $hoehe, Ende $amEnde',
+          );
+        }
+        if (mounted) {
+          setState(() {
+            dateilisteGefunden = gefunden.length;
+            status = '${gefunden.length} TXT-Dateien gefunden ...';
+          });
+        }
+        if (amEnde) {
+          if (hoehe == letzteHoehe && gefunden.length == letzteAnzahl) {
+            stabil++;
+          } else {
+            stabil = 0;
+          }
+          letzteHoehe = hoehe;
+          letzteAnzahl = gefunden.length;
+          if (stabil >= 5 && gefunden.isNotEmpty) {
+            endeErreicht = true;
+            break;
+          }
+          // OneDrive kann am Ende weitere virtuelle Zeilen nachladen.
+          await Future.delayed(const Duration(milliseconds: 1100));
+        } else {
+          if (nachher <= vorher + 1) {
+            stillstand++;
+            if (stillstand >= 4) {
+              throw StateError('iOS-Scrollbereich bewegt sich nicht');
+            }
+          } else {
+            stillstand = 0;
+          }
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+      if (!endeErreicht) {
+        throw StateError('Dateiliste nicht vollständig erfasst '
+            '(${gefunden.length} Dateien)');
+      }
+      if (lauf != dateilisteLaufnummer) {
+        throw StateError('Dateilisten-Lauf wurde ersetzt');
+      }
+      // Eine offensichtlich kleinere Liste nicht als vollständigen Bestand
+      // übernehmen; insbesondere die vorhandenen 82 Predigten schützen.
+      if (gefunden.length < predigtTexte.length) {
+        throw StateError('Nur ${gefunden.length} Dateien erkannt; '
+            '${predigtTexte.length} Predigten sind bereits gespeichert');
+      }
+      final dateien = gefunden.toList()..sort();
+      protokolliereSyncDiagnose(
+        'iOS-Dateiliste abgeschlossen: ${dateien.length} Dateien',
+      );
+      if (mounted) {
+        setState(() {
+          predigtDateien
+            ..clear()
+            ..addAll(dateien);
+          dateilisteGefunden = dateien.length;
+          status = '${dateien.length} Predigtdateien erfasst';
+        });
+      }
+      return dateien;
+    } catch (e) {
+      protokolliereSyncDiagnose('iOS-Dateiliste fehlgeschlagen: $e');
+      rethrow;
+    } finally {
+      if (mounted) setState(() => dateilisteWirdErfasst = false);
+    }
+  }
+
   // iOS: asynchronen WebView-Auftrag ohne langes Await starten.
   Future<void> starteIosDateiliste(int laufnummer) async {
     await controller.runJavaScript('''
