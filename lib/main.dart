@@ -662,6 +662,16 @@ await ladeSyncBericht();
         daten['fehler'] ?? <String, String>{},
       );
 
+      // Veralteten Timeout aus früherer Dateilisten-Erfassung entfernen.
+fehler.removeWhere(
+  (schluessel, meldung) =>
+      (schluessel == 'Synchronisierung' ||
+          schluessel == 'OneDrive') &&
+      meldung.contains(
+        'TimeoutException after 0:01:30.000000',
+      ),
+);
+
       final zeitpunkt = daten['zeitpunkt'];
 
       if (!mounted) return;
@@ -1533,7 +1543,7 @@ const kandidaten = buttons.filter(el => {
           ).searchParams.get('id') || '';
 
           const aktuellerName =
-            dateiPfad.split('/').pop() || '';
+            ${defaultTargetPlatform == TargetPlatform.iOS ? 'decodeURIComponent(' : ''}dateiPfad.split('/').pop() || ''${defaultTargetPlatform == TargetPlatform.iOS ? ')' : ''};
 
           if (
             typeof window.monaco === 'undefined' ||
