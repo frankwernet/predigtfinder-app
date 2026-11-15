@@ -1,7 +1,10 @@
 import 'package:flutter/foundation.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:http/http.dart' as http;
 
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
@@ -92,28 +95,20 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
   bool adminBereichAnzeigen = false;
 
   // Geschützter lokaler Speicher für die Administrator-PIN.
-final FlutterSecureStorage adminSpeicher =
-    const FlutterSecureStorage();
+  final FlutterSecureStorage adminSpeicher = const FlutterSecureStorage();
 
-static const String adminPinSchluessel =
-    'predigtfinder_admin_pin';
-
+  static const String adminPinSchluessel = 'predigtfinder_admin_pin';
 
   Future<bool> adminPinVorhanden() async {
-    final pin = await adminSpeicher.read(
-      key: adminPinSchluessel,
-    );
+    final pin = await adminSpeicher.read(key: adminPinSchluessel);
 
     return pin != null && pin.length == 4;
   }
 
   Future<bool> adminPinPruefen(String eingabe) async {
-    final gespeichertePin = await adminSpeicher.read(
-      key: adminPinSchluessel,
-    );
+    final gespeichertePin = await adminSpeicher.read(key: adminPinSchluessel);
 
-    return gespeichertePin != null &&
-        gespeichertePin == eingabe;
+    return gespeichertePin != null && gespeichertePin == eingabe;
   }
 
   Future<void> adminPinSpeichern(String neuePin) async {
@@ -123,12 +118,8 @@ static const String adminPinSchluessel =
       );
     }
 
-    await adminSpeicher.write(
-      key: adminPinSchluessel,
-      value: neuePin,
-    );
+    await adminSpeicher.write(key: adminPinSchluessel, value: neuePin);
   }
-
 
   Future<void> adminPinAendern() async {
     if (!adminAngemeldet) return;
@@ -158,9 +149,7 @@ static const String adminPinSchluessel =
                       obscureText: true,
                       keyboardType: TextInputType.number,
                       maxLength: 4,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: InputDecoration(
                         labelText: feld.$2,
                         counterText: '',
@@ -189,11 +178,9 @@ static const String adminPinSchluessel =
 
       if (!await adminPinPruefen(altePinController.text)) {
         meldung = 'Die bisherige PIN ist falsch.';
-      } else if (!RegExp(r'^[0-9]{4}$')
-          .hasMatch(neuePinController.text)) {
+      } else if (!RegExp(r'^[0-9]{4}$').hasMatch(neuePinController.text)) {
         meldung = 'Die neue PIN muss genau vier Ziffern haben.';
-      } else if (neuePinController.text !=
-          bestaetigungController.text) {
+      } else if (neuePinController.text != bestaetigungController.text) {
         meldung = 'Die neuen PIN-Eingaben stimmen nicht überein.';
       } else {
         await adminPinSpeichern(neuePinController.text);
@@ -202,17 +189,14 @@ static const String adminPinSchluessel =
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(meldung)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(meldung)));
     } catch (e) {
       debugPrint('PREDIGTFINDER PIN-ÄNDERUNG FEHLER: $e');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('PIN konnte nicht geändert werden.'),
-          ),
+          const SnackBar(content: Text('PIN konnte nicht geändert werden.')),
         );
       }
     } finally {
@@ -221,7 +205,6 @@ static const String adminPinSchluessel =
       bestaetigungController.dispose();
     }
   }
-
 
   Future<void> syncBerichtAnzeigen() async {
     if (!adminAngemeldet || !mounted) return;
@@ -268,9 +251,7 @@ static const String adminPinSchluessel =
                 Text(
                   'Protokollierte Fehler: '
                   '${synchronisierungsFehler.length}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 if (synchronisierungsFehler.isEmpty)
@@ -280,14 +261,11 @@ static const String adminPinSchluessel =
                     (eintrag) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             eintrag.key,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           Text(
                             eintrag.value,
@@ -314,7 +292,6 @@ static const String adminPinSchluessel =
     );
   }
 
-
   Future<void> adminMenueAnzeigen() async {
     if (!adminAngemeldet || !mounted) return;
 
@@ -328,26 +305,22 @@ static const String adminPinSchluessel =
             ListTile(
               leading: const Icon(Icons.assessment_outlined),
               title: const Text('Synchronisierungsbericht'),
-              onTap: () =>
-                  Navigator.pop(dialogContext, 'bericht'),
+              onTap: () => Navigator.pop(dialogContext, 'bericht'),
             ),
             ListTile(
               leading: const Icon(Icons.sync),
               title: const Text('Synchronisierung erneut starten'),
-              onTap: () =>
-                  Navigator.pop(dialogContext, 'sync'),
+              onTap: () => Navigator.pop(dialogContext, 'sync'),
             ),
             ListTile(
               leading: const Icon(Icons.key),
               title: const Text('Administrator-PIN ändern'),
-              onTap: () =>
-                  Navigator.pop(dialogContext, 'pin'),
+              onTap: () => Navigator.pop(dialogContext, 'pin'),
             ),
             ListTile(
               leading: const Icon(Icons.logout),
               title: const Text('Abmelden'),
-              onTap: () =>
-                  Navigator.pop(dialogContext, 'logout'),
+              onTap: () => Navigator.pop(dialogContext, 'logout'),
             ),
           ],
         ),
@@ -368,22 +341,33 @@ static const String adminPinSchluessel =
         break;
 
       case 'sync':
-  if (!automatischeSynchronisierungAktiv &&
-      !hintergrundErfassungAktiv &&
-      !dateilisteWirdErfasst) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Synchronisierung wird gestartet ...'),
-        duration: Duration(seconds: 5),
-      ),
-    );
-
-    await starteAutomatischeSynchronisierung();
-  } else {
+        if (!automatischeSynchronisierungAktiv &&
+            !hintergrundErfassungAktiv &&
+            !dateilisteWirdErfasst) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Synchronisierung läuft bereits.'),
+              content: Text('Synchronisierung wird gestartet ...'),
+              duration: Duration(seconds: 5),
             ),
+          );
+
+          try {
+            await synchronisiereVonGitHub();
+          } catch (e) {
+            debugPrint('PREDIGTFINDER GITHUB MANUELL FEHLER: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Synchronisierung fehlgeschlagen. Gespeicherte Predigten bleiben erhalten.',
+                  ),
+                ),
+              );
+            }
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Synchronisierung läuft bereits.')),
           );
         }
         break;
@@ -396,11 +380,10 @@ static const String adminPinSchluessel =
         break;
 
       case 'bericht':
-  await syncBerichtAnzeigen();
-  break;
+        await syncBerichtAnzeigen();
+        break;
     }
   }
-
 
   Future<void> adminAnmelden() async {
     final pinVorhanden = await adminPinVorhanden();
@@ -424,9 +407,7 @@ static const String adminPinSchluessel =
             obscureText: true,
             keyboardType: TextInputType.number,
             maxLength: 4,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-            ],
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: const InputDecoration(
               labelText: 'Vierstellige PIN',
               counterText: '',
@@ -439,14 +420,9 @@ static const String adminPinSchluessel =
             ),
             FilledButton(
               onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                  pinController.text,
-                );
+                Navigator.pop(dialogContext, pinController.text);
               },
-              child: Text(
-                pinVorhanden ? 'Anmelden' : 'PIN speichern',
-              ),
+              child: Text(pinVorhanden ? 'Anmelden' : 'PIN speichern'),
             ),
           ],
         ),
@@ -456,9 +432,7 @@ static const String adminPinSchluessel =
 
       if (!RegExp(r'^[0-9]{4}$').hasMatch(eingabe)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Bitte genau vier Ziffern eingeben.'),
-          ),
+          const SnackBar(content: Text('Bitte genau vier Ziffern eingeben.')),
         );
         return;
       }
@@ -482,16 +456,13 @@ static const String adminPinSchluessel =
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Administrator erfolgreich angemeldet'),
-        ),
+        const SnackBar(content: Text('Administrator erfolgreich angemeldet')),
       );
       await adminMenueAnzeigen();
     } finally {
       pinController.dispose();
     }
   }
-
 
   final TextEditingController suchfeld1 = TextEditingController();
   final TextEditingController suchfeld2 = TextEditingController();
@@ -571,7 +542,7 @@ static const String adminPinSchluessel =
     // Lokale Fassungen haben Vorrang.
     await ladePredigtenLokal();
     // Gespeicherten Synchronisierungsbericht laden.
-await ladeSyncBericht();
+    await ladeSyncBericht();
 
     if (!mounted) return;
 
@@ -594,13 +565,10 @@ await ladeSyncBericht();
     return File('${verzeichnis.path}/predigtfinder_texte.json');
   }
 
-
   Future<File> lokaleSyncBerichtDatei() async {
     final verzeichnis = await getApplicationDocumentsDirectory();
 
-    return File(
-      '${verzeichnis.path}/predigtfinder_sync_report.json',
-    );
+    return File('${verzeichnis.path}/predigtfinder_sync_report.json');
   }
 
   Future<void> speichereSyncBericht() async {
@@ -615,15 +583,10 @@ await ladeSyncBericht();
         'dateienErfolgreich': letzteAnzahlErfolgreich,
         'predigtenGespeichert': predigtTexte.length,
         'diagnose': List<String>.from(syncDiagnose),
-        'fehler': Map<String, String>.from(
-          synchronisierungsFehler,
-        ),
+        'fehler': Map<String, String>.from(synchronisierungsFehler),
       };
 
-      await tempDatei.writeAsString(
-        jsonEncode(bericht),
-        flush: true,
-      );
+      await tempDatei.writeAsString(jsonEncode(bericht), flush: true);
 
       if (await datei.exists()) {
         await datei.delete();
@@ -636,21 +599,16 @@ await ladeSyncBericht();
         '${synchronisierungsFehler.length} Fehlereinträge',
       );
     } catch (e) {
-      debugPrint(
-        'PREDIGTFINDER SYNC-BERICHT SPEICHERFEHLER: $e',
-      );
+      debugPrint('PREDIGTFINDER SYNC-BERICHT SPEICHERFEHLER: $e');
     }
   }
-
 
   Future<void> ladeSyncBericht() async {
     try {
       final datei = await lokaleSyncBerichtDatei();
 
       if (!await datei.exists()) {
-        debugPrint(
-          'PREDIGTFINDER SYNC-BERICHT: Noch nicht vorhanden',
-        );
+        debugPrint('PREDIGTFINDER SYNC-BERICHT: Noch nicht vorhanden');
         return;
       }
 
@@ -668,14 +626,11 @@ await ladeSyncBericht();
       );
 
       // Veralteten Timeout aus früherer Dateilisten-Erfassung entfernen.
-fehler.removeWhere(
-  (schluessel, meldung) =>
-      (schluessel == 'Synchronisierung' ||
-          schluessel == 'OneDrive') &&
-      meldung.contains(
-        'TimeoutException after 0:01:30.000000',
-      ),
-);
+      fehler.removeWhere(
+        (schluessel, meldung) =>
+            (schluessel == 'Synchronisierung' || schluessel == 'OneDrive') &&
+            meldung.contains('TimeoutException after 0:01:30.000000'),
+      );
 
       final zeitpunkt = daten['zeitpunkt'];
 
@@ -686,16 +641,14 @@ fehler.removeWhere(
           ..clear()
           ..addAll(fehler);
 
-        letzteAnzahlGefunden =
-            (daten['dateienGefunden'] as num?)?.toInt() ?? 0;
+        letzteAnzahlGefunden = (daten['dateienGefunden'] as num?)?.toInt() ?? 0;
 
         letzteAnzahlErfolgreich =
             (daten['dateienErfolgreich'] as num?)?.toInt() ?? 0;
 
-        letzteSynchronisierung =
-            zeitpunkt is String
-                ? DateTime.tryParse(zeitpunkt)
-                : null;
+        letzteSynchronisierung = zeitpunkt is String
+            ? DateTime.tryParse(zeitpunkt)
+            : null;
       });
 
       debugPrint(
@@ -703,12 +656,9 @@ fehler.removeWhere(
         '${synchronisierungsFehler.length} Fehlereinträge',
       );
     } catch (e) {
-      debugPrint(
-        'PREDIGTFINDER SYNC-BERICHT LADEFEHLER: $e',
-      );
+      debugPrint('PREDIGTFINDER SYNC-BERICHT LADEFEHLER: $e');
     }
   }
-
 
   Future<void> _letzterSpeichervorgang = Future.value();
 
@@ -737,6 +687,132 @@ fehler.removeWhere(
 
     _letzterSpeichervorgang = vorgang;
     return vorgang;
+  }
+
+  Future<void> synchronisiereVonGitHub() async {
+    if (automatischeSynchronisierungAktiv) {
+      debugPrint('PREDIGTFINDER GITHUB: Synchronisierung läuft bereits');
+      return;
+    }
+
+    automatischeSynchronisierungAktiv = true;
+
+    try {
+    const basis = 'https://frankwernet.github.io/predigtfinder';
+
+    final antwort = await http
+        .get(Uri.parse('$basis/predigten.json'))
+        .timeout(const Duration(seconds: 30));
+
+    if (antwort.statusCode != 200) {
+      throw Exception('GitHub HTTP ${antwort.statusCode}');
+    }
+
+    final daten = jsonDecode(utf8.decode(antwort.bodyBytes));
+
+    if (daten is! Map || daten['predigten'] is! List) {
+      throw const FormatException('Ungültiges Predigtverzeichnis');
+    }
+
+    final eintraege = daten['predigten'] as List;
+    final neueTexte = <String, String>{};
+    final neueVideos = <String, String>{};
+    final fehler = <String>[];
+
+    for (final eintrag in eintraege) {
+      try {
+        if (eintrag is! Map) {
+          throw const FormatException('Ungültiger Eintrag');
+        }
+
+        final name = eintrag['datei'];
+        final video = eintrag['video'];
+
+        if (name is! String ||
+            !name.toLowerCase().endsWith('.txt') ||
+            name.contains('/') ||
+            name.contains(r'\') ||
+            video is! String ||
+            !video.toLowerCase().endsWith('.mp4')) {
+          throw const FormatException('Ungültiger Datei- oder Videoname');
+        }
+
+        final url = Uri.parse('$basis/texte/${Uri.encodeComponent(name)}');
+
+        final textAntwort = await http
+            .get(url)
+            .timeout(const Duration(seconds: 30));
+
+        if (textAntwort.statusCode != 200) {
+          throw Exception('HTTP ${textAntwort.statusCode}');
+        }
+
+        final inhalt = utf8.decode(textAntwort.bodyBytes);
+
+        if (inhalt.trim().isEmpty) {
+          throw const FormatException('Leerer Predigttext');
+        }
+
+        final ersteZeile = inhalt
+            .split(RegExp(r'\r?\n'))
+            .first
+            .replaceFirst('\uFEFF', '')
+            .trim();
+
+        if (ersteZeile != video) {
+          throw const FormatException('Videozuordnung stimmt nicht');
+        }
+
+        neueTexte[name] = inhalt;
+        neueVideos[name] = video;
+      } catch (e) {
+        fehler.add('${eintrag is Map ? eintrag['datei'] : '?'}: $e');
+      }
+    }
+
+    if (fehler.isNotEmpty) {
+      for (final eintrag in fehler) {
+        debugPrint('PREDIGTFINDER GITHUB FEHLER: $eintrag');
+      }
+    }
+
+    if (fehler.isNotEmpty) {
+      throw StateError(
+        'GitHub-Synchronisierung unvollständig: ${fehler.length} Fehler',
+      );
+    }
+
+    if (neueTexte.isEmpty) {
+      throw StateError('Keine Predigten von GitHub geladen');
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      predigtTexte
+        ..clear()
+        ..addAll(neueTexte);
+
+      videoDateinamen
+        ..clear()
+        ..addAll(neueVideos);
+
+      predigtDateien
+        ..clear()
+        ..addAll(predigtTexte.keys.toList()..sort());
+
+      status = '${neueTexte.length} GitHub-Predigten geladen';
+    });
+
+    await speicherePredigtenLokal();
+
+    debugPrint(
+      'PREDIGTFINDER GITHUB ERFOLG: '
+      '${neueTexte.length} Texte, ${fehler.length} Fehler',
+    );
+    } finally {
+      automatischeSynchronisierungAktiv = false;
+    }
   }
 
   Future<bool> ladePredigtenLokal() async {
@@ -882,8 +958,7 @@ fehler.removeWhere(
       if (!mounted) return false;
 
       try {
-        final ergebnis =
-            await controller.runJavaScriptReturningResult(r'''
+        final ergebnis = await controller.runJavaScriptReturningResult(r'''
           (() => {
             const liste = Array.from(
               document.querySelectorAll('[id^="html-list_"]')
@@ -907,8 +982,7 @@ fehler.removeWhere(
     debugPrint('PREDIGTFINDER AUTOSYNC: Dateiliste nicht bereit');
 
     try {
-      final diagnose =
-          await controller.runJavaScriptReturningResult(r'''
+      final diagnose = await controller.runJavaScriptReturningResult(r'''
         (() => {
           return JSON.stringify({
             url: window.location.href,
@@ -932,6 +1006,7 @@ fehler.removeWhere(
 
     return false;
   }
+
   Future<void> starteAutomatischeSynchronisierung() async {
     if (automatischeSynchronisierungAktiv ||
         hintergrundErfassungAktiv ||
@@ -941,7 +1016,7 @@ fehler.removeWhere(
     }
 
     automatischeSynchronisierungAktiv = true;
-String syncSchritt = 'Initialisierung';
+    String syncSchritt = 'Initialisierung';
     syncDiagnose.clear();
     protokolliereSyncDiagnose('01 Synchronisierung gestartet');
     try {
@@ -960,54 +1035,50 @@ String syncSchritt = 'Initialisierung';
 
       if (!mounted) return;
 
-syncSchritt = 'OneDrive-Seite laden';
-    protokolliereSyncDiagnose('02 OneDrive-Seite laden');
+      syncSchritt = 'OneDrive-Seite laden';
+      protokolliereSyncDiagnose('02 OneDrive-Seite laden');
       // Zentral konfigurierten Textordner laden.
-      await controller.loadRequest(
-        Uri.parse(aktiveOneDriveUrl),
-      );
-syncSchritt = 'Auf OneDrive-Dateiliste warten';
-    protokolliereSyncDiagnose('03 Warte auf OneDrive-Dateiliste');
+      await controller.loadRequest(Uri.parse(aktiveOneDriveUrl));
+      syncSchritt = 'Auf OneDrive-Dateiliste warten';
+      protokolliereSyncDiagnose('03 Warte auf OneDrive-Dateiliste');
       // Auf die dynamische OneDrive-Dateiliste warten.
       final bereit = await warteAufPredigtDateiliste();
 
       if (!mounted) return;
 
       if (!bereit) {
-  debugPrint(
-    'PREDIGTFINDER AUTOSYNC: OneDrive-Dateiliste nicht verfügbar',
-  );
+        debugPrint(
+          'PREDIGTFINDER AUTOSYNC: OneDrive-Dateiliste nicht verfügbar',
+        );
 
-    letzteSynchronisierung = DateTime.now();
-  letzteAnzahlGefunden = 0;
-  letzteAnzahlErfolgreich = predigtTexte.length;
+        letzteSynchronisierung = DateTime.now();
+        letzteAnzahlGefunden = 0;
+        letzteAnzahlErfolgreich = predigtTexte.length;
 
-  synchronisierungsFehler['OneDrive'] =
-      'OneDrive-Dateiliste konnte nicht geladen werden.';
+        synchronisierungsFehler['OneDrive'] =
+            'OneDrive-Dateiliste konnte nicht geladen werden.';
 
-  await speichereSyncBericht();
+        await speichereSyncBericht();
 
-  if (mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Synchronisierung abgebrochen: '
-          'OneDrive-Dateiliste konnte nicht geladen werden.',
-        ),
-        duration: Duration(seconds: 15),
-      ),
-    );
-  }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Synchronisierung abgebrochen: '
+                'OneDrive-Dateiliste konnte nicht geladen werden.',
+              ),
+              duration: Duration(seconds: 15),
+            ),
+          );
+        }
 
-  return;
-}
+        return;
+      }
 
-      debugPrint(
-        'PREDIGTFINDER AUTOSYNC: OneDrive bereit für Dateierfassung',
-      );
+      debugPrint('PREDIGTFINDER AUTOSYNC: OneDrive bereit für Dateierfassung');
 
-syncSchritt = 'OneDrive-Dateiliste erfassen';
-    protokolliereSyncDiagnose('04 JavaScript-Dateierfassung starten');
+      syncSchritt = 'OneDrive-Dateiliste erfassen';
+      protokolliereSyncDiagnose('04 JavaScript-Dateierfassung starten');
       final dateien = await erfasseDateilisteMitTimeout();
 
       if (!mounted) return;
@@ -1017,8 +1088,7 @@ syncSchritt = 'OneDrive-Dateiliste erfassen';
           .toSet();
 
       final neueDateien = dateien.where((name) {
-        final normalisiert =
-            name.replaceAll(RegExp(r'\s+'), ' ').trim();
+        final normalisiert = name.replaceAll(RegExp(r'\s+'), ' ').trim();
 
         return !gespeicherteNamen.contains(normalisiert);
       }).toList();
@@ -1033,7 +1103,7 @@ syncSchritt = 'OneDrive-Dateiliste erfassen';
           'Starte Erfassung von ${neueDateien.length} fehlenden Predigten',
         );
 
-syncSchritt = 'Predigttexte erfassen';
+        syncSchritt = 'Predigttexte erfassen';
         await erfassePredigten(predigtDateien.length);
 
         debugPrint(
@@ -1048,7 +1118,6 @@ syncSchritt = 'Predigttexte erfassen';
         '${predigtTexte.length} Predigten gespeichert, '
         '${neueDateien.length} neue Dateien',
       );
-
 
       // Ein früherer Timeout ist nach einem erfolgreichen Lauf nicht aktuell.
       synchronisierungsFehler.remove('Synchronisierung');
@@ -1065,32 +1134,31 @@ syncSchritt = 'Predigttexte erfassen';
         'PREDIGTFINDER AUTOSYNC: '
         'Synchronisierungsbericht aktualisiert',
       );
-
-
     } catch (e) {
-  debugPrint('PREDIGTFINDER AUTOSYNC FEHLER: $e');
+      debugPrint('PREDIGTFINDER AUTOSYNC FEHLER: $e');
 
-  letzteSynchronisierung = DateTime.now();
-  letzteAnzahlGefunden = predigtDateien.length;
-  letzteAnzahlErfolgreich = predigtTexte.length;
+      letzteSynchronisierung = DateTime.now();
+      letzteAnzahlGefunden = predigtDateien.length;
+      letzteAnzahlErfolgreich = predigtTexte.length;
 
- synchronisierungsFehler['Synchronisierung'] =
-    'Schritt: $syncSchritt | Fehler: $e';
+      synchronisierungsFehler['Synchronisierung'] =
+          'Schritt: $syncSchritt | Fehler: $e';
 
-  await speichereSyncBericht();
+      await speichereSyncBericht();
 
-  if (mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Synchronisierung fehlgeschlagen: $e'),
-        duration: const Duration(seconds: 15),
-      ),
-    );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Synchronisierung fehlgeschlagen: $e'),
+            duration: const Duration(seconds: 15),
+          ),
+        );
+      }
+    } finally {
+      automatischeSynchronisierungAktiv = false;
+    }
   }
-} finally {
-  automatischeSynchronisierungAktiv = false;
-}
-  }
+
   Future<void> initialisiereStartdaten() async {
     await initialisierePredigtSpeicher();
     if (!mounted) return;
@@ -1110,37 +1178,56 @@ syncSchritt = 'Predigttexte erfassen';
 
     if (!mounted) return;
 
-    await starteAutomatischeSynchronisierung();
+    try {
+      await synchronisiereVonGitHub();
+    } catch (e) {
+      debugPrint('PREDIGTFINDER GITHUB STARTFEHLER: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        status = 'GitHub nicht erreichbar – gespeicherte Predigten verfügbar';
+      });
+    }
   }
+
   @override
   void initState() {
     super.initState();
     unawaited(initialisiereStartdaten());
-    githubKonfigurationsTimer = Timer.periodic(
-      const Duration(minutes: 30),
-      (_) async {
-        if (!mounted) return;
+    githubKonfigurationsTimer = Timer.periodic(const Duration(minutes: 30), (
+      _,
+    ) async {
+      if (!mounted) return;
 
-        if (automatischeSynchronisierungAktiv ||
-            hintergrundErfassungAktiv ||
-            dateilisteWirdErfasst ||
-            videoAnsichtAnzeigen ||
-            videoWirdGeladen ||
-            predigtVorschauAnzeigen) {
-          debugPrint(
-            'PREDIGTFINDER AUTOSYNC: '
-            '30-Minuten-Abgleich wegen aktiver Nutzung verschoben',
-          );
-          return;
+      if (automatischeSynchronisierungAktiv ||
+          hintergrundErfassungAktiv ||
+          dateilisteWirdErfasst ||
+          videoAnsichtAnzeigen ||
+          videoWirdGeladen ||
+          predigtVorschauAnzeigen) {
+        debugPrint(
+          'PREDIGTFINDER AUTOSYNC: '
+          '30-Minuten-Abgleich wegen aktiver Nutzung verschoben',
+        );
+        return;
+      }
+
+      await pruefeGitHubKonfiguration();
+
+      if (!mounted) return;
+
+      try {
+        await synchronisiereVonGitHub();
+      } catch (e) {
+        debugPrint('PREDIGTFINDER GITHUB AUTOSYNC FEHLER: $e');
+        if (mounted) {
+          setState(() {
+            status = 'GitHub-Abgleich fehlgeschlagen. Gespeicherte Predigten bleiben erhalten.';
+          });
         }
-
-        await pruefeGitHubKonfiguration();
-
-        if (!mounted) return;
-
-        await starteAutomatischeSynchronisierung();
-      },
-    );
+      }
+    });
 
     videoController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -1266,8 +1353,7 @@ syncSchritt = 'Predigttexte erfassen';
                 final dateiname = daten['dateiname']?.toString() ?? '';
                 final meldung = 'iOS Editor fehlt: $dateiname';
 
-                if (!syncDiagnose.any((eintrag) =>
-                    eintrag.contains(meldung))) {
+                if (!syncDiagnose.any((eintrag) => eintrag.contains(meldung))) {
                   protokolliereSyncDiagnose(meldung);
                 }
               }
@@ -1348,7 +1434,8 @@ syncSchritt = 'Predigttexte erfassen';
               if (daten['laufId'] == dateilisteLaufnummer &&
                   dateilisteCompleter != null &&
                   !dateilisteCompleter!.isCompleted) {
-                final meldung = daten['meldung']?.toString() ?? 'Unbekannter Fehler';
+                final meldung =
+                    daten['meldung']?.toString() ?? 'Unbekannter Fehler';
                 protokolliereSyncDiagnose('FEHLER: $meldung');
                 dateilisteCompleter!.completeError(StateError(meldung));
               }
@@ -1369,7 +1456,9 @@ syncSchritt = 'Predigttexte erfassen';
                     dateilisteCompleter != null &&
                     !dateilisteCompleter!.isCompleted) {
                   dateilisteCompleter!.completeError(
-                    StateError('iOS-Dateierfassung: 60-Sekunden-Limit erreicht'),
+                    StateError(
+                      'iOS-Dateierfassung: 60-Sekunden-Limit erreicht',
+                    ),
                   );
                 }
               }
@@ -1495,17 +1584,11 @@ syncSchritt = 'Predigttexte erfassen';
       );
   }
 
-
-
   Future<bool> stelleOneDriveDateilisteWiederHer() async {
-    debugPrint(
-      'PREDIGTFINDER WIEDERHERSTELLUNG: Starte',
-    );
+    debugPrint('PREDIGTFINDER WIEDERHERSTELLUNG: Starte');
 
     try {
-      await controller.loadRequest(
-        Uri.parse(aktiveOneDriveUrl),
-      );
+      await controller.loadRequest(Uri.parse(aktiveOneDriveUrl));
 
       final bereit = await warteAufPredigtDateiliste();
 
@@ -1517,21 +1600,14 @@ syncSchritt = 'Predigttexte erfassen';
         return false;
       }
 
-      debugPrint(
-        'PREDIGTFINDER WIEDERHERSTELLUNG: Erfolgreich',
-      );
+      debugPrint('PREDIGTFINDER WIEDERHERSTELLUNG: Erfolgreich');
 
       return true;
     } catch (e) {
-      debugPrint(
-        'PREDIGTFINDER WIEDERHERSTELLUNG FEHLER: $e',
-      );
+      debugPrint('PREDIGTFINDER WIEDERHERSTELLUNG FEHLER: $e');
       return false;
     }
   }
-
-
-
 
   Future<bool> testClosePreview() async {
     try {
@@ -1921,6 +1997,7 @@ PredigtFinderVideo.postMessage(JSON.stringify({
       }
     }
   }
+
   // iOS: Jeder WebView-Aufruf ist synchron und kurz. Flutter steuert die
   // Pausen; dadurch läuft keine lange JavaScript-Promise in WKWebView.
   Future<List<String>> erfasseIosDateilisteSchrittweise() async {
@@ -1949,7 +2026,8 @@ PredigtFinderVideo.postMessage(JSON.stringify({
           throw TimeoutException('iOS-Dateiliste: Zeitlimit 115 Sekunden');
         }
         // JavaScript liefert sofort eine JSON-Zeichenfolge zurück.
-        final antwort = await controller.runJavaScriptReturningResult(r'''
+        final antwort = await controller
+            .runJavaScriptReturningResult(r'''
           (() => {
             const liste = Array.from(
               document.querySelectorAll('[id^="html-list_"]')
@@ -1988,7 +2066,8 @@ PredigtFinderVideo.postMessage(JSON.stringify({
               amEnde: amEnde
             });
           })();
-        ''').timeout(const Duration(seconds: 12));
+        ''')
+            .timeout(const Duration(seconds: 12));
         // iOS liefert normalerweise einen JSON-String; Android ist hier
         // nicht betroffen. Eventuelle zusätzliche Anführungszeichen abfangen.
         dynamic daten = antwort;
@@ -2042,8 +2121,10 @@ PredigtFinderVideo.postMessage(JSON.stringify({
         }
       }
       if (!endeErreicht) {
-        throw StateError('Dateiliste nicht vollständig erfasst '
-            '(${gefunden.length} Dateien)');
+        throw StateError(
+          'Dateiliste nicht vollständig erfasst '
+          '(${gefunden.length} Dateien)',
+        );
       }
       if (lauf != dateilisteLaufnummer) {
         throw StateError('Dateilisten-Lauf wurde ersetzt');
@@ -2051,8 +2132,10 @@ PredigtFinderVideo.postMessage(JSON.stringify({
       // Eine offensichtlich kleinere Liste nicht als vollständigen Bestand
       // übernehmen; insbesondere die vorhandenen 82 Predigten schützen.
       if (gefunden.length < predigtTexte.length) {
-        throw StateError('Nur ${gefunden.length} Dateien erkannt; '
-            '${predigtTexte.length} Predigten sind bereits gespeichert');
+        throw StateError(
+          'Nur ${gefunden.length} Dateien erkannt; '
+          '${predigtTexte.length} Predigten sind bereits gespeichert',
+        );
       }
       final dateien = gefunden.toList()..sort();
       protokolliereSyncDiagnose(
@@ -2160,9 +2243,7 @@ PredigtFinderVideo.postMessage(JSON.stringify({
 
     final laufnummer = ++dateilisteLaufnummer;
 
-    debugPrint(
-      'PREDIGTFINDER DATEILISTE START: Lauf $laufnummer',
-    );
+    debugPrint('PREDIGTFINDER DATEILISTE START: Lauf $laufnummer');
 
     setState(() {
       dateilisteWirdErfasst = true;
@@ -2367,8 +2448,7 @@ return 'Ergebnis gesendet';      })();
     } catch (e) {
       debugPrint('PREDIGTFINDER FEHLER: $e');
 
-      if (dateilisteCompleter != null &&
-          !dateilisteCompleter!.isCompleted) {
+      if (dateilisteCompleter != null && !dateilisteCompleter!.isCompleted) {
         dateilisteCompleter!.completeError(e);
       }
 
@@ -2533,15 +2613,12 @@ return 'Ergebnis gesendet';      })();
           }
 
           // Erfolgreich eingelesene Predigt
-erfolgreich++;
+          erfolgreich++;
 
-// Eventuellen früheren Fehler entfernen.
-synchronisierungsFehler.remove(dateiname);
+          // Eventuellen früheren Fehler entfernen.
+          synchronisierungsFehler.remove(dateiname);
 
-debugPrint(
-  'PREDIGTFINDER ERFOLGREICH: $dateiname',
-);
-        
+          debugPrint('PREDIGTFINDER ERFOLGREICH: $dateiname');
         } catch (e) {
           fehlerhafteDateien.add(dateiname);
 
@@ -2552,12 +2629,8 @@ debugPrint(
           predigtTexte.addAll(alteTexte);
           videoDateinamen.addAll(alteVideos);
 
-          debugPrint(
-            'PREDIGTFINDER DATEIFEHLER: $dateiname | $e',
-          );
-        }
-
-        finally {
+          debugPrint('PREDIGTFINDER DATEIFEHLER: $dateiname | $e');
+        } finally {
           if (defaultTargetPlatform == TargetPlatform.iOS) {
             // iOS: Nach dem Einleseversuch die Dateiliste
             // kontrolliert wiederherstellen.
@@ -2568,9 +2641,7 @@ debugPrint(
           }
         }
 
-        
-        if (!geschlossen &&
-            defaultTargetPlatform == TargetPlatform.iOS) {
+        if (!geschlossen && defaultTargetPlatform == TargetPlatform.iOS) {
           debugPrint(
             'PREDIGTFINDER IOS WIEDERHERSTELLUNG FEHLGESCHLAGEN: $dateiname',
           );
@@ -2583,17 +2654,13 @@ debugPrint(
         }
 
         if (!geschlossen) {
-          debugPrint(
-            'PREDIGTFINDER SCHLIESSFEHLER: $dateiname',
-          );
+          debugPrint('PREDIGTFINDER SCHLIESSFEHLER: $dateiname');
           synchronisierungsFehler[dateiname] =
-    'OneDrive-Textvorschau konnte nicht geschlossen werden';
+              'OneDrive-Textvorschau konnte nicht geschlossen werden';
 
           // Erneut versuchen, die Textvorschau zu schließen.
           for (var versuch = 0; versuch < 3; versuch++) {
-            await Future.delayed(
-              const Duration(milliseconds: 800),
-            );
+            await Future.delayed(const Duration(milliseconds: 800));
 
             geschlossen = await testClosePreview();
 
@@ -2601,12 +2668,9 @@ debugPrint(
           }
 
           if (!geschlossen) {
-            debugPrint(
-              'PREDIGTFINDER WIEDERHERSTELLUNG: $dateiname',
-            );
+            debugPrint('PREDIGTFINDER WIEDERHERSTELLUNG: $dateiname');
 
-            final wiederhergestellt =
-                await stelleOneDriveDateilisteWiederHer();
+            final wiederhergestellt = await stelleOneDriveDateilisteWiederHer();
 
             if (!wiederhergestellt) {
               debugPrint(
@@ -2624,7 +2688,6 @@ debugPrint(
             );
           }
         }
-
 
         if (erfassungAbbrechen) {
           debugPrint('PREDIGTFINDER ERFASSUNG ABGEBROCHEN');
@@ -2685,7 +2748,6 @@ debugPrint(
     await erfassePredigten(10);
   }
 
-
   void alleFilterZuruecksetzen() {
     setState(() {
       suchfeld1.clear();
@@ -2712,8 +2774,6 @@ debugPrint(
       '${predigtTexte.length} Texte gespeichert',
     );
   }
-
-
 
   void suchePredigten() {
     final begriffe = [
@@ -2789,19 +2849,19 @@ debugPrint(
 
     final trefferzahlen = <String, int>{};
 
-    final ergebnisse = predigtTexte.entries
-        .where((eintrag) => passt(eintrag.value))
-        .map((eintrag) {
+    final ergebnisse =
+        predigtTexte.entries.where((eintrag) => passt(eintrag.value)).map((
+          eintrag,
+        ) {
           trefferzahlen[eintrag.key] = zaehleTreffer(eintrag.value);
           return eintrag.key;
-        })
-        .toList()
-      ..sort((a, b) {
-        final vergleich =
-            (trefferzahlen[b] ?? 0).compareTo(trefferzahlen[a] ?? 0);
+        }).toList()..sort((a, b) {
+          final vergleich = (trefferzahlen[b] ?? 0).compareTo(
+            trefferzahlen[a] ?? 0,
+          );
 
-        return vergleich != 0 ? vergleich : a.compareTo(b);
-      });
+          return vergleich != 0 ? vergleich : a.compareTo(b);
+        });
 
     debugPrint(
       'PREDIGTFINDER SUCHERGEBNIS: '
@@ -2871,10 +2931,10 @@ debugPrint(
   }
 
   Future<void> oeffneVideoDirekt(String videoName) async {
-  debugPrint('PREDIGTFINDER: Video im Browser öffnen: $videoName');
+    debugPrint('PREDIGTFINDER: Video im Browser öffnen: $videoName');
 
-  await videoImBrowserOeffnen(videoName);
-}
+    await videoImBrowserOeffnen(videoName);
+  }
 
   Future<void> ladeOneDriveVideoOrdner() async {
     try {
@@ -2887,13 +2947,9 @@ debugPrint(
         status = 'Lade OneDrive-Videoordner ...';
       });
 
-      debugPrint(
-        'PREDIGTFINDER VIDEOORDNER: $aktiveOneDriveVideoUrl',
-      );
+      debugPrint('PREDIGTFINDER VIDEOORDNER: $aktiveOneDriveVideoUrl');
 
-      await videoController.loadRequest(
-        Uri.parse(aktiveOneDriveVideoUrl),
-      );
+      await videoController.loadRequest(Uri.parse(aktiveOneDriveVideoUrl));
     } catch (e) {
       debugPrint('PREDIGTFINDER VIDEOORDNER FEHLER: $e');
 
@@ -2905,13 +2961,13 @@ debugPrint(
       });
     }
   }
+
   Future<bool> warteAufVideoDateiliste() async {
     for (int versuch = 0; versuch < 30; versuch++) {
       if (!mounted) return false;
 
       try {
-        final ergebnis =
-            await videoController.runJavaScriptReturningResult(r'''
+        final ergebnis = await videoController.runJavaScriptReturningResult(r'''
           (() => {
             const liste = Array.from(
               document.querySelectorAll('[id^="html-list_"]')
@@ -2935,6 +2991,7 @@ debugPrint(
     debugPrint('PREDIGTFINDER VIDEOLISTE TIMEOUT');
     return false;
   }
+
   Future<void> openSelectedVideo(String videoName) async {
     try {
       if (!mounted) return;
@@ -3313,17 +3370,15 @@ while (schritte < 600) {
             Text('PredigtFinder', style: TextStyle(fontSize: 12)),
           ],
         ),
-       
+
         actions: [
           IconButton(
             tooltip: 'Administration',
             icon: const Icon(Icons.lock_outline),
-            
+
             onPressed: adminAnmelden,
-            
           ),
           PopupMenuButton<String>(
-
             tooltip: 'Kontakt und Informationen',
             icon: const Icon(Icons.more_vert),
             onSelected: (wert) {
@@ -3338,7 +3393,6 @@ while (schritte < 600) {
               }
             },
             itemBuilder: (context) => [
-
               PopupMenuItem(value: 'hilfe', child: Text('Ich suche Hilfe')),
               PopupMenuItem(
                 value: 'mission',
@@ -3458,17 +3512,13 @@ while (schritte < 600) {
                     label: const Text('Predigten suchen'),
                   ),
 
+                  const SizedBox(height: 6),
 
-
-const SizedBox(height: 6),
-
-OutlinedButton.icon(
-  onPressed: alleFilterZuruecksetzen,
-  icon: const Icon(Icons.restart_alt),
-  label: const Text('Alle Filter zurücksetzen'),
-),
-
-
+                  OutlinedButton.icon(
+                    onPressed: alleFilterZuruecksetzen,
+                    icon: const Icon(Icons.restart_alt),
+                    label: const Text('Alle Filter zurücksetzen'),
+                  ),
                 ],
               ),
             ),
