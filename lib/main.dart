@@ -506,6 +506,7 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
   Timer? githubKonfigurationsTimer;
 
   Future<void> ladeVideoDirektlinks() async {
+    // Lokale Videolinks als Rückfalllösung laden.
     try {
       final jsonText = await rootBundle.loadString(
         'assets/data/videolinks_start.json',
@@ -513,27 +514,70 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
 
       final daten = jsonDecode(jsonText);
 
+      if (daten is Map) {
+        final links = Map<String, String>.from(daten);
+
+        if (!mounted) return;
+
+        setState(() {
+          videoDirektlinks
+            ..clear()
+            ..addAll(links);
+        });
+
+        debugPrint(
+          'PREDIGTFINDER VIDEOLINKS LOKAL: ${links.length}',
+        );
+      }
+    } catch (e) {
+      debugPrint('PREDIGTFINDER VIDEOLINKS LOKAL FEHLER: $e');
+    }
+
+    // Aktuelle Videolinks zentral von GitHub laden.
+    try {
+      final antwort = await http.get(
+        Uri.parse(
+          'https://frankwernet.github.io/predigtfinder/videolinks.json',
+        ),
+      ).timeout(const Duration(seconds: 20));
+
+      if (antwort.statusCode != 200) {
+        throw Exception('GitHub HTTP ${antwort.statusCode}');
+      }
+
+      final daten = jsonDecode(utf8.decode(antwort.bodyBytes));
+
       if (daten is! Map) {
-        throw Exception('Ungültiges Videolinkformat');
+        throw const FormatException('Ungültige Videolinkliste');
       }
 
       final links = Map<String, String>.from(daten);
 
+      if (links.isEmpty ||
+          links.values.any(
+            (link) =>
+                !link.startsWith('https://'),
+          )) {
+        throw const FormatException('Ungültige Videolinks');
+      }
+
       if (!mounted) return;
 
       setState(() {
-        videoDirektlinks.addAll(links);
+        videoDirektlinks
+          ..clear()
+          ..addAll(links);
       });
 
       debugPrint(
-        'PREDIGTFINDER DIREKTLINKS GELADEN: '
-        '${videoDirektlinks.length}',
+        'PREDIGTFINDER VIDEOLINKS GITHUB ERFOLG: ${links.length}',
       );
     } catch (e) {
-      debugPrint('PREDIGTFINDER DIREKTLINKFEHLER: $e');
+      debugPrint(
+        'PREDIGTFINDER VIDEOLINKS GITHUB FEHLER: $e',
+      );
     }
   }
-
   Future<void> initialisierePredigtSpeicher() async {
     // Zuerst die gesicherten Startpredigten laden.
     await ladeStartPredigten();
@@ -737,7 +781,13 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
           throw const FormatException('Ungültiger Datei- oder Videoname');
         }
 
-        final url = Uri.parse('$basis/texte/${Uri.encodeComponent(name)}');
+        final url = Uri.parse(
+          '$basis/texte/${Uri.encodeComponent(name)}',
+        ).replace(
+          queryParameters: {
+            'v': DateTime.now().millisecondsSinceEpoch.toString(),
+          },
+        );
 
         final textAntwort = await http
             .get(url)
@@ -1240,13 +1290,8 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
             if (daten is Map && daten['typ'] == 'videoOeffnen') {
               debugPrint('PREDIGTFINDER VIDEO ÖFFNEN: ${message.message}');
 
-              if (daten['erfolg'] == true && mounted) {
-                setState(() {
-                  videoAnsichtAnzeigen = true;
-                  predigtVorschauAnzeigen = false;
-                  status = 'Video wird geöffnet ...';
-                });
-              }
+              // Alte OneDrive-Videoansicht deaktiviert.
+              // Videos werden ausschließlich extern über YouTube geöffnet.
             }
 
             if (daten is Map && daten['typ'] == 'videoSuche') {
@@ -1401,7 +1446,7 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
                   video.toLowerCase().endsWith('.mp4')) {
                 debugPrint('PREDIGTFINDER VIDEOZUORDNUNG: $video');
 
-                openSelectedVideo(video);
+                oeffneVideoDirekt(video);
               }
             }
             if (daten is Map && daten['typ'] == 'iosSchliessDiagnose') {
@@ -2902,10 +2947,13 @@ return 'Ergebnis gesendet';      })();
   Future<void> videoImBrowserOeffnen(String videoName) async {
     final link = videoDirektlinks[videoName];
 
-    if (link == null || link.isEmpty) {
+    if (link == null ||
+        !RegExp(
+          r'^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)',
+        ).hasMatch(link)) {
       if (!mounted) return;
       setState(() {
-        status = 'Kein OneDrive-Link vorhanden';
+        status = 'Dieses Video ist noch nicht auf YouTube verfügbar';
       });
       return;
     }
@@ -3605,40 +3653,6 @@ while (schritte < 600) {
                         icon: const Icon(Icons.find_in_page, size: 16),
                         label: const Text('Dateielement'),
                       ),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            videoAnsichtAnzeigen = true;
-                            status = 'OneDrive 2 – Videoordner';
-                          });
-                        },
-                        icon: const Icon(Icons.video_library, size: 16),
-                        label: const Text('Videos'),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: testVideoFileList,
-                        icon: const Icon(Icons.search, size: 16),
-                        label: const Text('Videoliste'),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: () => openSelectedVideo(
-                          '6 Tipps von Zeitzeugen des Endes der Welt.mp4',
-                        ),
-                        icon: const Icon(Icons.play_circle_outline, size: 16),
-                        label: const Text('Video suchen'),
-                      ),
-
-                      ElevatedButton.icon(
-                        onPressed: pruefeAktuelleVideoAdresse,
-                        icon: const Icon(Icons.link, size: 16),
-                        label: const Text('Video-Adresse prüfen'),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: closeVideoPreview,
-                        icon: const Icon(Icons.close, size: 16),
-                        label: const Text('Video schließen'),
-                      ),
-
                       if (predigtVorschauAnzeigen || videoAnsichtAnzeigen)
                         ElevatedButton.icon(
                           onPressed: closeVideoPreview,
@@ -3793,28 +3807,23 @@ while (schritte < 600) {
                                 }
                               });
                               if (istDoppelklick) {
-                                if (sucheAktiv) {
-                                  final text = predigtTexte[dateiname] ?? '';
-                                  final ersteZeile = text
-                                      .split(RegExp(r'\r?\n'))
-                                      .first
-                                      .trim();
+                                final text = predigtTexte[dateiname] ?? '';
+                                final ersteZeile = text
+                                    .split(RegExp(r'\r?\n'))
+                                    .first
+                                    .replaceFirst('\uFEFF', '')
+                                    .trim();
+                                final video = videoDateinamen[dateiname] ??
+                                    (ersteZeile.toLowerCase().endsWith('.mp4')
+                                        ? ersteZeile
+                                        : '');
 
-                                  final video =
-                                      videoDateinamen[dateiname] ??
-                                      (ersteZeile.toLowerCase().endsWith('.mp4')
-                                          ? ersteZeile
-                                          : '');
-
-                                  if (video.toLowerCase().endsWith('.mp4')) {
-                                    oeffneVideoDirekt(video);
-                                  } else {
-                                    setState(() {
-                                      status = 'Kein Video zugeordnet';
-                                    });
-                                  }
+                                if (video.toLowerCase().endsWith('.mp4')) {
+                                  unawaited(oeffneVideoDirekt(video));
                                 } else {
-                                  openSelectedFile(dateiname);
+                                  setState(() {
+                                    status = 'Kein Video zugeordnet';
+                                  });
                                 }
                               }
                             },
@@ -3848,7 +3857,7 @@ while (schritte < 600) {
                                 ),
                                 icon: const Icon(Icons.download),
                                 label: const Text(
-                                  'Video im Browser herunterladen',
+                                  'Video auf YouTube ansehen',
                                 ),
                               ),
                             ),
