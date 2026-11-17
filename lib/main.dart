@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+﻿import 'package:flutter/foundation.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -48,6 +48,62 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
   final List<String> predigtDateien = [];
   final List<String> suchErgebnisse = [];
   final Map<String, int> suchTrefferzahlen = {};
+
+  final Map<String, DateTime> predigtDatum = {};
+  bool sortierungNeuesteZuerst = true;
+  bool sortierungNachTreffern = true;
+
+
+
+List<String> sortiertePredigtDateien() {
+  final dateien = List<String>.from(
+    sucheAktiv ? suchErgebnisse : predigtDateien,
+  );
+
+  // Bei aktiver Suche standardmaessig nach Treffern sortieren.
+  if (sucheAktiv && sortierungNachTreffern) {
+    dateien.sort((a, b) {
+      final trefferA = suchTrefferzahlen[a] ?? 0;
+      final trefferB = suchTrefferzahlen[b] ?? 0;
+
+      final vergleich = trefferB.compareTo(trefferA);
+
+      return vergleich != 0
+          ? vergleich
+          : a.toLowerCase().compareTo(b.toLowerCase());
+    });
+
+    return dateien;
+  }
+
+  if (sortierungNeuesteZuerst) {
+    dateien.sort((a, b) {
+      final datumA = predigtDatum[a];
+      final datumB = predigtDatum[b];
+
+      if (datumA == null && datumB == null) {
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      }
+      if (datumA == null) return 1;
+      if (datumB == null) return -1;
+
+      final vergleich = datumB.compareTo(datumA);
+
+      return vergleich != 0
+          ? vergleich
+          : a.toLowerCase().compareTo(b.toLowerCase());
+    });
+  } else {
+    dateien.sort(
+      (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+    );
+  }
+
+  return dateien;
+}
+
+
+
   bool sucheAktiv = false;
   bool hintergrundErfassungAktiv = false;
   bool automatischeSynchronisierungAktiv = false;
@@ -718,11 +774,21 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
   Future<void> _letzterSpeichervorgang = Future.value();
 
   Future<void> speicherePredigtenLokal() {
-    final snapshot = <String, dynamic>{
-      'version': 1,
-      'predigtTexte': Map<String, String>.from(predigtTexte),
-      'videoDateinamen': Map<String, String>.from(videoDateinamen),
-    };
+
+final snapshot = <String, dynamic>{
+  'version': 1,
+  'predigtTexte': Map<String, String>.from(predigtTexte),
+  'videoDateinamen': Map<String, String>.from(videoDateinamen),
+  'predigtDatum': predigtDatum.map(
+    (dateiname, datum) => MapEntry(
+      dateiname,
+      '${datum.year.toString().padLeft(4, '0')}-'
+      '${datum.month.toString().padLeft(2, '0')}-'
+      '${datum.day.toString().padLeft(2, '0')}',
+    ),
+  ),
+};
+
 
     final vorgang = _letzterSpeichervorgang.catchError((Object _) {}).then((
       _,
@@ -744,13 +810,81 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
     return vorgang;
   }
 
+
+Future<void> ladePredigtDatumsangaben() async {
+  try {
+    final url = Uri.parse(
+      'https://frankwernet.github.io/predigtfinder/predigt_daten.json',
+    ).replace(
+      queryParameters: {
+        'v': DateTime.now().millisecondsSinceEpoch.toString(),
+      },
+    );
+
+    final antwort = await http
+        .get(url)
+        .timeout(const Duration(seconds: 30));
+
+    if (antwort.statusCode != 200) {
+      throw Exception('HTTP ${antwort.statusCode}');
+    }
+
+    final daten = jsonDecode(utf8.decode(antwort.bodyBytes));
+
+    if (daten is! Map) {
+      throw const FormatException('Ungueltige Datumsdatei');
+    }
+
+    final geladeneDaten = <String, DateTime>{};
+
+    for (final eintrag in daten.entries) {
+      if (eintrag.key is String && eintrag.value is String) {
+        final datum = DateTime.tryParse(eintrag.value as String);
+
+        if (datum != null) {
+          geladeneDaten[eintrag.key as String] = datum;
+        }
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      predigtDatum
+        ..clear()
+        ..addAll(geladeneDaten);
+    });
+
+    debugPrint(
+      'PREDIGTFINDER DATUM: ${predigtDatum.length} Datumsangaben geladen',
+    );
+
+debugPrint(
+  'PREDIGTFINDER DATUM TEST: '
+  'Dateien=${predigtDateien.length}, '
+  'mit Datum=${predigtDateien.where((name) => predigtDatum.containsKey(name)).length}',
+);
+
+debugPrint(
+  'PREDIGTFINDER DATUM BEISPIEL: '
+  '${predigtDatum["WER IST GOTT und WAS IST ER WIRKLICH GUT oder BÖSE.txt"]}',
+);
+
+  } catch (e) {
+    debugPrint('PREDIGTFINDER DATUM LADEFEHLER: $e');
+  }
+}
+
+
   Future<void> synchronisiereVonGitHub() async {
     if (automatischeSynchronisierungAktiv) {
       debugPrint('PREDIGTFINDER GITHUB: Synchronisierung läuft bereits');
       return;
     }
 
-    automatischeSynchronisierungAktiv = true;
+    setState(() {
+  automatischeSynchronisierungAktiv = true;
+});
 
     try {
     const basis = 'https://frankwernet.github.io/predigtfinder';
@@ -867,12 +1001,21 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
 
     await speicherePredigtenLokal();
 
+    await ladePredigtDatumsangaben();
+
+
     debugPrint(
       'PREDIGTFINDER GITHUB ERFOLG: '
       '${neueTexte.length} Texte, ${fehler.length} Fehler',
     );
     } finally {
-      automatischeSynchronisierungAktiv = false;
+      if (mounted) {
+  setState(() {
+    automatischeSynchronisierungAktiv = false;
+  });
+} else {
+  automatischeSynchronisierungAktiv = false;
+}
     }
   }
 
@@ -3401,6 +3544,38 @@ while (schritte < 600) {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+
+bottomNavigationBar: automatischeSynchronisierungAktiv
+    ? SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+          color: Colors.blue.shade50,
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
+              ),
+              SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  'Predigten werden synchronisiert …',
+                ),
+              ),
+            ],
+          ),
+        ),
+      )
+    : null,
+
       appBar: AppBar(
         title: const Column(
           mainAxisSize: MainAxisSize.min,
@@ -3694,6 +3869,75 @@ while (schritte < 600) {
                 ],
               ),
             ),
+
+          if (!videoAnsichtAnzeigen && !predigtVorschauAnzeigen)
+ 
+if (!videoAnsichtAnzeigen && !predigtVorschauAnzeigen)
+  Padding(
+    padding: const EdgeInsets.symmetric(
+      horizontal: 8,
+      vertical: 6,
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+    backgroundColor: !sortierungNeuesteZuerst &&
+            !sortierungNachTreffern
+        ? Colors.blue.shade100
+        : null,
+  ),
+            onPressed: () {
+              setState(() {
+                sortierungNeuesteZuerst = false;
+                sortierungNachTreffern = false;
+              });
+            },
+            child: const Text('A–Z'),
+          ),
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+  backgroundColor: sortierungNeuesteZuerst &&
+          !(sucheAktiv && sortierungNachTreffern)
+      ? Colors.blue.shade100
+      : null,
+),
+            onPressed: () {
+              setState(() {
+                sortierungNeuesteZuerst = true;
+                sortierungNachTreffern = false;
+              });
+            },
+            child: const Text('Neueste'),
+          ),
+        ),
+        if (sucheAktiv) ...[
+          const SizedBox(width: 5),
+          Expanded(
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+  backgroundColor: sucheAktiv && sortierungNachTreffern
+      ? Colors.blue.shade100
+      : null,
+),
+              onPressed: () {
+                setState(() {
+                  sortierungNachTreffern = true;
+                });
+              },
+              child: const Text('Treffer ↓'),
+            ),
+          ),
+        ],
+      ],
+    ),
+  ),
+
+
           Expanded(
             child: isOpened || predigtDateien.isNotEmpty
                 ? IndexedStack(
@@ -3708,15 +3952,17 @@ while (schritte < 600) {
                           ? WebViewWidget(controller: controller)
                           : const SizedBox.shrink(),
 
-                      ListView.builder(
-                        itemCount: sucheAktiv
-                            ? suchErgebnisse.length
-                            : predigtDateien.length,
-                        itemBuilder: (context, index) {
-                          final dateiname = sucheAktiv
-                              ? suchErgebnisse[index]
-                              : predigtDateien[index];
-                          final istMarkiert = markierteDatei == dateiname;
+
+                        Builder(
+                          builder: (context) {
+                            final sortierteDateien = sortiertePredigtDateien();
+
+                            return ListView.builder(
+                              itemCount: sortierteDateien.length,
+                              itemBuilder: (context, index) {
+                                final dateiname = sortierteDateien[index];
+                                final istMarkiert = markierteDatei == dateiname;
+
 
                           return ListTile(
                             leading: Icon(
@@ -3762,11 +4008,21 @@ while (schritte < 600) {
                                     ? '${suchTrefferzahlen[dateiname] ?? 0} Treffer'
                                     : '';
                             
-                                final untertitel = [
-                                  if (treffer.isNotEmpty) treffer,
-                                  if (dauer.isNotEmpty) dauer,
-                                ].join(' · ');
-                            
+
+final datum = predigtDatum[dateiname];
+
+final datumText = datum == null
+    ? ''
+    : '${datum.day.toString().padLeft(2, '0')}.'
+      '${datum.month.toString().padLeft(2, '0')}.'
+      '${datum.year}';
+
+final untertitel = [
+  if (datumText.isNotEmpty) datumText,
+  if (treffer.isNotEmpty) treffer,
+  if (dauer.isNotEmpty) dauer,
+].join(' · ');
+                         
                                 if (untertitel.isEmpty) {
                                   return const SizedBox.shrink();
                                 }
@@ -3829,9 +4085,11 @@ while (schritte < 600) {
                                 }
                               }
                             },
-                          );
-                        },
-                      ),
+            );
+          },
+        );
+      },
+    ),
 
                       Column(
                         children: [
