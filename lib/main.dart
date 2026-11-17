@@ -303,16 +303,6 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.assessment_outlined),
-              title: const Text('Synchronisierungsbericht'),
-              onTap: () => Navigator.pop(dialogContext, 'bericht'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.sync),
-              title: const Text('Synchronisierung erneut starten'),
-              onTap: () => Navigator.pop(dialogContext, 'sync'),
-            ),
-            ListTile(
               leading: const Icon(Icons.key),
               title: const Text('Administrator-PIN ändern'),
               onTap: () => Navigator.pop(dialogContext, 'pin'),
@@ -339,52 +329,14 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
       case 'pin':
         await adminPinAendern();
         break;
-
-      case 'sync':
-        if (!automatischeSynchronisierungAktiv &&
-            !hintergrundErfassungAktiv &&
-            !dateilisteWirdErfasst) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Synchronisierung wird gestartet ...'),
-              duration: Duration(seconds: 5),
-            ),
-          );
-
-          try {
-            await synchronisiereVonGitHub();
-          } catch (e) {
-            debugPrint('PREDIGTFINDER GITHUB MANUELL FEHLER: $e');
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Synchronisierung fehlgeschlagen. Gespeicherte Predigten bleiben erhalten.',
-                  ),
-                ),
-              );
-            }
-          }
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Synchronisierung läuft bereits.')),
-          );
-        }
-        break;
-
       case 'logout':
         setState(() {
           adminAngemeldet = false;
           adminBereichAnzeigen = false;
         });
         break;
-
-      case 'bericht':
-        await syncBerichtAnzeigen();
-        break;
     }
   }
-
   Future<void> adminAnmelden() async {
     final pinVorhanden = await adminPinVorhanden();
 
@@ -485,6 +437,7 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
   final Map<String, String> predigtTexte = {};
   final Map<String, String> videoDateinamen = {};
   final Map<String, String> videoDirektlinks = {};
+  final Map<String, int> videoDauern = {};
   DateTime? letzterKlickZeitpunkt;
   String? letzteAngeklickteDatei;
   static const String oneDriveUrl =
@@ -576,6 +529,64 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
       debugPrint(
         'PREDIGTFINDER VIDEOLINKS GITHUB FEHLER: $e',
       );
+    }
+  }
+  String formatiereVideoDauer(int sekunden) {
+    final dauer = Duration(seconds: sekunden);
+    final stunden = dauer.inHours;
+    final minuten = dauer.inMinutes.remainder(60);
+    final restSekunden = dauer.inSeconds.remainder(60);
+
+    final mm = minuten.toString().padLeft(2, '0');
+    final ss = restSekunden.toString().padLeft(2, '0');
+
+    if (stunden > 0) {
+      return '$stunden:$mm:$ss';
+    }
+
+    return '$minuten:$ss';
+  }
+  Future<void> ladeVideoDauern() async {
+    try {
+      final antwort = await http.get(
+        Uri.parse(
+          'https://frankwernet.github.io/predigtfinder/videodauern.json',
+        ),
+      ).timeout(const Duration(seconds: 20));
+
+      if (antwort.statusCode != 200) {
+        throw Exception('GitHub HTTP ${antwort.statusCode}');
+      }
+
+      final daten = jsonDecode(utf8.decode(antwort.bodyBytes));
+
+      if (daten is! Map) {
+        throw const FormatException('Ungültige Videolängen');
+      }
+
+      final dauern = <String, int>{};
+
+      for (final eintrag in daten.entries) {
+        if (eintrag.key is String &&
+            eintrag.value is int &&
+            eintrag.value > 0) {
+          dauern[eintrag.key as String] = eintrag.value as int;
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        videoDauern
+          ..clear()
+          ..addAll(dauern);
+      });
+
+      debugPrint(
+        'PREDIGTFINDER VIDEOLÄNGEN GELADEN: ${dauern.length}',
+      );
+    } catch (e) {
+      debugPrint('PREDIGTFINDER VIDEOLÄNGEN FEHLER: $e');
     }
   }
   Future<void> initialisierePredigtSpeicher() async {
@@ -1214,6 +1225,7 @@ class _OneDriveTestPageState extends State<OneDriveTestPage> {
     if (!mounted) return;
 
     await ladeVideoDirektlinks();
+    await ladeVideoDauern();
     if (!mounted) return;
 
     await pruefeGitHubKonfiguration();
@@ -3769,15 +3781,36 @@ while (schritte < 600) {
                                 );
                               })(),
                             ),
-                            subtitle: sucheAktiv
-                                ? Text(
-                                    '${suchTrefferzahlen[dateiname] ?? 0} Treffer',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.blueGrey,
-                                    ),
-                                  )
-                                : null,
+                            subtitle: Builder(
+                              builder: (context) {
+                                final video = videoDateinamen[dateiname];
+                                final sekunden = videoDauern[video];
+                                final dauer = sekunden == null
+                                    ? ''
+                                    : formatiereVideoDauer(sekunden);
+                            
+                                final treffer = sucheAktiv
+                                    ? '${suchTrefferzahlen[dateiname] ?? 0} Treffer'
+                                    : '';
+                            
+                                final untertitel = [
+                                  if (treffer.isNotEmpty) treffer,
+                                  if (dauer.isNotEmpty) dauer,
+                                ].join(' · ');
+                            
+                                if (untertitel.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+                            
+                                return Text(
+                                  untertitel,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.blueGrey,
+                                  ),
+                                );
+                              },
+                            ),
                             selected: istMarkiert,
                             selectedTileColor: Colors.blue.shade100,
                             onTap: () {
