@@ -3398,23 +3398,6 @@ while (schritte < 600) {
     );
   }
 
-  Future<void> spendenLinkOeffnen() async {
-    final uri = Uri.parse('https://www.paypal.com/pool/9uh3sULPHI');
-
-    try {
-      final erfolgreich = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (!erfolgreich) {
-        debugPrint('Spendenlink konnte nicht geöffnet werden.');
-      }
-    } catch (e) {
-      debugPrint('Fehler beim Öffnen des Spendenlinks: $e');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -3471,20 +3454,6 @@ while (schritte < 600) {
 
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: spendenLinkOeffnen,
-                icon: const Icon(Icons.favorite_outline),
-                label: const Text(
-                  'PredigtFinder freiwillig unterstützen',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ),
           if (!videoAnsichtAnzeigen)
             TextButton.icon(
               onPressed: () {
