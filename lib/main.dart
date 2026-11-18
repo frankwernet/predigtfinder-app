@@ -26,6 +26,9 @@ class PredigtFinderApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        scrollbars: true,
+      ),
       title: 'PredigtFinder',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -46,10 +49,25 @@ class OneDriveTestPage extends StatefulWidget {
 class _OneDriveTestPageState extends State<OneDriveTestPage> {
   bool suchmenueAnzeigen = false;
   final List<String> predigtDateien = [];
+  final ScrollController predigtScrollController = ScrollController();
+
+  Widget mitPredigtScrollbar(Widget liste) {
+    return Scrollbar(
+      controller: predigtScrollController,
+      thumbVisibility: true,
+      trackVisibility: true,
+      interactive: true,
+      thickness: 8,
+      child: liste,
+    );
+  }
   final List<String> suchErgebnisse = [];
   final Map<String, int> suchTrefferzahlen = {};
 
   final Map<String, DateTime> predigtDatum = {};
+  int githubSyncGesamt = 0;
+  int githubSyncVerarbeitet = 0;
+
   bool sortierungNeuesteZuerst = true;
   bool sortierungNachTreffern = true;
 
@@ -652,6 +670,10 @@ List<String> sortiertePredigtDateien() {
     // Danach lokale Daten ergänzen.
     // Lokale Fassungen haben Vorrang.
     await ladePredigtenLokal();
+
+    // Datumsangaben unabhängig von der Synchronisierung laden.
+    await ladePredigtDatumsangaben();
+
     // Gespeicherten Synchronisierungsbericht laden.
     await ladeSyncBericht();
 
@@ -908,6 +930,13 @@ debugPrint(
     final neueVideos = <String, String>{};
     final fehler = <String>[];
 
+    if (mounted) {
+      setState(() {
+        githubSyncGesamt = eintraege.length;
+        githubSyncVerarbeitet = 0;
+      });
+    }
+
     for (final eintrag in eintraege) {
       try {
         if (eintrag is! Map) {
@@ -926,7 +955,13 @@ debugPrint(
           throw const FormatException('Ungültiger Datei- oder Videoname');
         }
 
-        final url = Uri.parse(
+                // Bereits gespeicherte Predigten nicht erneut herunterladen.
+        if (predigtTexte.containsKey(name) &&
+            predigtTexte[name]!.trim().isNotEmpty &&
+            videoDateinamen[name] == video) {
+          continue;
+        }
+final url = Uri.parse(
           '$basis/texte/${Uri.encodeComponent(name)}',
         ).replace(
           queryParameters: {
@@ -962,6 +997,12 @@ debugPrint(
         neueVideos[name] = video;
       } catch (e) {
         fehler.add('${eintrag is Map ? eintrag['datei'] : '?'}: $e');
+      } finally {
+        if (mounted) {
+          setState(() {
+            githubSyncVerarbeitet++;
+          });
+        }
       }
     }
 
@@ -971,26 +1012,13 @@ debugPrint(
       }
     }
 
-    if (fehler.isNotEmpty) {
-      throw StateError(
-        'GitHub-Synchronisierung unvollständig: ${fehler.length} Fehler',
-      );
-    }
-
-    if (neueTexte.isEmpty) {
-      throw StateError('Keine Predigten von GitHub geladen');
-    }
+    // Einzelne Dateifehler verhindern nicht das Speichern erfolgreicher Downloads.
 
     if (!mounted) return;
 
     setState(() {
-      predigtTexte
-        ..clear()
-        ..addAll(neueTexte);
-
-      videoDateinamen
-        ..clear()
-        ..addAll(neueVideos);
+      predigtTexte.addAll(neueTexte);
+      videoDateinamen.addAll(neueVideos);
 
       predigtDateien
         ..clear()
@@ -3870,6 +3898,30 @@ bottomNavigationBar: automatischeSynchronisierungAktiv
               ),
             ),
 
+          if (automatischeSynchronisierungAktiv)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    githubSyncGesamt > 0
+                        ? 'Synchronisierung: $githubSyncVerarbeitet von $githubSyncGesamt Predigten'
+                        : 'Synchronisierung wird vorbereitet ...',
+                  ),
+                  const SizedBox(height: 6),
+                  LinearProgressIndicator(
+                    value: githubSyncGesamt > 0
+                        ? githubSyncVerarbeitet / githubSyncGesamt
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+
           if (!videoAnsichtAnzeigen && !predigtVorschauAnzeigen)
  
 if (!videoAnsichtAnzeigen && !predigtVorschauAnzeigen)
@@ -3957,7 +4009,8 @@ if (!videoAnsichtAnzeigen && !predigtVorschauAnzeigen)
                           builder: (context) {
                             final sortierteDateien = sortiertePredigtDateien();
 
-                            return ListView.builder(
+                            return mitPredigtScrollbar(ListView.builder(
+                               controller: predigtScrollController,
                               itemCount: sortierteDateien.length,
                               itemBuilder: (context, index) {
                                 final dateiname = sortierteDateien[index];
@@ -4087,7 +4140,7 @@ final untertitel = [
                             },
             );
           },
-        );
+        ));
       },
     ),
 
