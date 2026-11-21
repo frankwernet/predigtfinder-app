@@ -1,4 +1,4 @@
-﻿import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -3130,6 +3130,7 @@ return 'Ergebnis gesendet';      })();
   Future<void> videoImBrowserOeffnen(String videoName) async {
     final link = videoDirektlinks[videoName];
 
+
     if (link == null ||
         !RegExp(
           r'^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)',
@@ -4018,10 +4019,7 @@ if (!videoAnsichtAnzeigen && !predigtVorschauAnzeigen)
 
 
                           return ListTile(
-                            leading: Icon(
-                              Icons.play_circle_outline,
-                              color: Colors.blue,
-                            ),
+
                             title: Text(
                               (() {
                                 final text = predigtTexte[dateiname] ?? '';
@@ -4091,33 +4089,15 @@ final untertitel = [
                             ),
                             selected: istMarkiert,
                             selectedTileColor: Colors.blue.shade100,
-                            onTap: () {
-                              final jetzt = DateTime.now();
-
-                              final istDoppelklick =
-                                  letzteAngeklickteDatei == dateiname &&
-                                  letzterKlickZeitpunkt != null &&
-                                  jetzt
-                                          .difference(letzterKlickZeitpunkt!)
-                                          .inMilliseconds <
-                                      400;
-
-                              setState(() {
-                                markierteDatei = dateiname;
-
-                                if (istDoppelklick) {
-                                  status = 'Doppelklick erkannt: $dateiname';
-
-                                  letzterKlickZeitpunkt = null;
-                                  letzteAngeklickteDatei = null;
-                                } else {
-                                  status = 'Markiert: $dateiname';
-
-                                  letzterKlickZeitpunkt = jetzt;
-                                  letzteAngeklickteDatei = dateiname;
-                                }
-                              });
-                              if (istDoppelklick) {
+                            trailing: IconButton(
+                              icon: const Icon(
+                                Icons.play_circle_filled,
+                                size: 48,
+                                color: Colors.blue,
+                              ),
+                              iconSize: 48,
+                              tooltip: 'Video auf YouTube ansehen',
+                              onPressed: () {
                                 final text = predigtTexte[dateiname] ?? '';
                                 final ersteZeile = text
                                     .split(RegExp(r'\r?\n'))
@@ -4136,8 +4116,8 @@ final untertitel = [
                                     status = 'Kein Video zugeordnet';
                                   });
                                 }
-                              }
-                            },
+                              },
+                            ),
             );
           },
         ));
